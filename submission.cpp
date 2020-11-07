@@ -9,6 +9,32 @@
 using namespace std;
 using namespace cv;
 
+class ChromaKeyer
+{
+public:
+	ChromaKeyer(const char* inputFile) : inputFile(inputFile) {}
+	// TODO: define copy/move constructors and the assignment operators
+	virtual ~ChromaKeyer() = default;
+
+	String getInputFile() const { return inputFile; }
+
+	void keyOut(const char* windowName, const char* backgroundFile, const char* outputFile);
+
+private:
+
+	//virtual void pickColor(const char* windowName) = 0;
+	virtual void replaceBackground(const char* windowName, const char* backgroundFile, const char* outputFile) = 0;
+
+
+	String inputFile;
+};	// ChromaKeyer
+
+void ChromaKeyer::keyOut(const char* windowName, const char* backgroundFile, const char* outputFile)
+{
+	//pickColor(windowName);
+	replaceBackground(windowName, backgroundFile, outputFile);
+}
+
 
 class ChromaKeyingFactory
 {
