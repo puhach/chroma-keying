@@ -54,6 +54,88 @@ void ImageKeyer::replaceBackground(const char* windowName, const char* backgroun
 
 }	// replaceBackground
 
+class VideoKeyer : public ChromaKeyer
+{
+public:
+	VideoKeyer(const char* inputFile) : ChromaKeyer(inputFile) {}
+
+	//virtual void pickColor(const char* windowName) override;
+	virtual void replaceBackground(const char* windowName, const char* backgroundFile, const char* outputFile) override;
+};	// VideoKeyer
+
+//void VideoKeyer::pickColor(const char* windowName)
+//{
+//}
+
+void VideoKeyer::replaceBackground(const char* windowName, const char* backgroundFile, const char* outputFile)
+{
+	namedWindow(windowName);
+
+	VideoCapture capIn(getInputFile()), capBg(backgroundFile);
+	CV_Assert(capIn.isOpened());
+	CV_Assert(capBg.isOpened());
+
+	int frameWidth = capIn.get(CAP_PROP_FRAME_WIDTH)
+	  , frameHeight = capIn.get(CAP_PROP_FRAME_HEIGHT)
+	  , frameCount = capIn.get(CAP_PROP_FRAME_COUNT);
+
+	bool colorPicked = true;
+	Mat frameIn, frameBg;
+
+	for (int frameIndex = 0; ; ++frameIndex)
+	{
+		capIn >> frameIn;
+
+		if (colorPicked)
+		{
+			if (frameIn.empty())
+				break;	// looks like we've reached the end of the stream
+
+			if (!capBg.read(frameBg))
+			{
+				//CV_Assert(capBg.set(CAP_PROP_POS_FRAMES, 0));	
+				//capBg.read(frameBg);
+
+				capBg.release();	// perhaps, we've reached the end of the stream?
+				if (!capBg.open(backgroundFile) || !capBg.read(frameBg))
+				//if (!capBg.set(CAP_PROP_POS_FRAMES, 0) || !capBg.read(frameBg))	// try to rewind and read again
+					throw runtime_error("Failed to read the background frame.");
+			}	// empty
+
+			// TODO: 			
+			// resize the background frame
+			// replace the background
+			// show the frameIn
+			// wait for the key
+		}	// colorPicked
+		else
+		{
+			if (frameIn.empty())
+			{				
+				if (frameIndex == 0)
+					throw runtime_error("Failed to read the input file. Is it empty?");
+
+				//CV_Assert(capIn.set(CAP_PROP_POS_FRAMES, 0));
+				capIn.release();
+				capIn.open(getInputFile());
+				frameIndex = 0;
+				continue;
+			}	// frameIn is empty
+			else
+			{
+				// TODO:
+				// show the frameIn
+				// wait for the key
+			}	// frameIn is not empty
+		}	// !colorPicked
+
+	}	// for
+
+	//capIn.release();
+
+	// TODO: destroy window
+}	// replaceBackground
+
 class ChromaKeyingFactory
 {
 public:
