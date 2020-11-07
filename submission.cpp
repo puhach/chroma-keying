@@ -35,6 +35,24 @@ void ChromaKeyer::keyOut(const char* windowName, const char* backgroundFile, con
 	replaceBackground(windowName, backgroundFile, outputFile);
 }
 
+class ImageKeyer : public ChromaKeyer
+{
+public:
+	ImageKeyer(const char* inputFile) : ChromaKeyer(inputFile) {}
+
+	//virtual void pickColor(const char* windowName) override;
+	virtual void replaceBackground(const char* windowName, const char* backgroundFile, const char* outputFile) override;
+};	// ImageKeyer
+
+
+//void ImageKeyer::pickColor(const char* windowName)
+//{
+//}
+
+void ImageKeyer::replaceBackground(const char* windowName, const char* backgroundFile, const char* outputFile)
+{
+
+}	// replaceBackground
 
 class ChromaKeyingFactory
 {
