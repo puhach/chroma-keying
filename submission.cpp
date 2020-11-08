@@ -23,7 +23,7 @@ public:
 	void exec(const char* windowName, const char* backgroundFile, const char* outputFile);
 
 protected:
-	void createGui(const char *windowName);
+	void createSettingsWindow(const char *windowName, int tolerance);
 	
 private:
 
@@ -35,6 +35,11 @@ private:
 		
 	// Descendants are free to provide their handlers, default implementation does nothing
 	virtual void onMouse(int event, int x, int y, int flags) {}		
+	
+	static void onToleranceChanged(int pos, void* data);
+
+	virtual void onToleranceChanged(int pos) { }
+	
 	//void cleanupHelper() { }
 
 	String inputFile;
@@ -73,13 +78,13 @@ void ChromaKeyer::exec(const char* windowName, const char* backgroundFile, const
 }	// exec
 
 
-void ChromaKeyer::createGui(const char* windowName) 
+void ChromaKeyer::createSettingsWindow(const char* windowName, int tolerance) 
 {
 	//destroyWindow(windowName);	
 	namedWindow(windowName);
 	setMouseCallback(windowName, ChromaKeyer::onMouseStatic, this);
-	// TODO: add trackbars
-}	// createGui
+	createTrackbar("Tolerance", windowName, &tolerance, 100, ChromaKeyer::onToleranceChanged, this);
+}	// createSettingsWindow
 
 
 void ChromaKeyer::onMouseStatic(int event, int x, int y, int flags, void* data)
@@ -89,7 +94,11 @@ void ChromaKeyer::onMouseStatic(int event, int x, int y, int flags, void* data)
 	keyer->onMouse(event, x, y, flags);
 }	// onMouseStatic
 
-
+void ChromaKeyer::onToleranceChanged(int pos, void* data)
+{
+	assert(data != nullptr);
+	static_cast<ChromaKeyer*>(data)->onToleranceChanged(pos);
+}	// onToleranceChanged
 
 
 class ImageKeyer : public ChromaKeyer
@@ -137,9 +146,12 @@ private:
 
 	virtual void onMouse(int event, int x, int y, int flags) override;
 
+	virtual void onToleranceChanged(int pos) override;
+
 	bool paramsSet = false;
 	Mat curFrame;
 	Scalar color;
+	int tolerance = 0;
 };	// VideoKeyer
 
 //void VideoKeyer::pickColor(const char* windowName)
@@ -176,8 +188,9 @@ bool VideoKeyer::setupKeyer(const char* windowName)
 	//createGui(windowName);
 
 	this->paramsSet = false;
+	this->tolerance = 10;	// default tolerance
 
-	createGui(windowName);
+	createSettingsWindow(windowName, this->tolerance);
 
 	VideoCapture capIn(getInputFile());
 	CV_Assert(capIn.isOpened());
@@ -205,6 +218,7 @@ bool VideoKeyer::setupKeyer(const char* windowName)
 	}	// for
 
 	//setMouseCallback(windowName, nullptr, 0);	// disable mouse handling
+	destroyWindow(windowName);
 
 	return this->paramsSet;
 }	// setupKeyer
@@ -215,11 +229,16 @@ void VideoKeyer::onMouse(int event, int x, int y, int flags)
 
 	if (event == EVENT_LBUTTONDOWN)
 	{
-		// TODO: get pixel color from the point location
 		this->color = this->curFrame.at<Vec3b>(x, y);
 		this->paramsSet = true;
 	}
 }	// onMouse
+
+void VideoKeyer::onToleranceChanged(int pos)
+{
+	assert(!this->paramsSet);
+	this->tolerance = pos;
+}	// onToleranceChanged
 
 void VideoKeyer::keyOut(const char* windowName, const char* backgroundFile, const char* outputFile)
 {
