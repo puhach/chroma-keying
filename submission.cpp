@@ -23,7 +23,7 @@ public:
 	void exec(const char* windowName, const char* backgroundFile, const char* outputFile);
 
 protected:
-	void createSettingsWindow(const char *windowName, int tolerance, int softness);
+	void createSettingsWindow(const char *windowName, int tolerance, int softness, int defringe);
 	
 private:
 
@@ -47,10 +47,15 @@ private:
 
 	virtual void onSoftnessChanged(int pos) { }
 
+	static void onDefringeChanged(int pos, void* data);
+
+	virtual void onDefringeChanged(int pos) {}
+
 	//void cleanupHelper() { }
 
 	String inputFile;
 	//bool bSetUp = false;
+	int tolerance = 0, softness = 0, defringe = 0;
 };	// ChromaKeyer
 
 void ChromaKeyer::exec(const char* windowName, const char* backgroundFile, const char* outputFile)
@@ -85,13 +90,18 @@ void ChromaKeyer::exec(const char* windowName, const char* backgroundFile, const
 }	// exec
 
 
-void ChromaKeyer::createSettingsWindow(const char* windowName, int tolerance, int softness) 
+void ChromaKeyer::createSettingsWindow(const char* windowName, int tolerance, int softness, int defringe) 
 {
+	this->tolerance = tolerance;
+	this->softness = softness;
+	this->defringe = defringe;
+
 	//destroyWindow(windowName);	
 	namedWindow(windowName);
 	setMouseCallback(windowName, ChromaKeyer::onMouse, this);
-	createTrackbar("Tolerance", windowName, &tolerance, 100, ChromaKeyer::onToleranceChanged, this);
-	createTrackbar("Softness", windowName, &softness, 100, ChromaKeyer::onSoftnessChanged, this);
+	createTrackbar("Tolerance", windowName, &this->tolerance, 100, ChromaKeyer::onToleranceChanged, this);
+	createTrackbar("Softness", windowName, &this->softness, 100, ChromaKeyer::onSoftnessChanged, this);
+	createTrackbar("Defringe", windowName, &this->defringe, 100, ChromaKeyer::onDefringeChanged, this);
 }	// createSettingsWindow
 
 
@@ -113,6 +123,12 @@ void ChromaKeyer::onSoftnessChanged(int pos, void* data)
 	assert(data != nullptr);
 	static_cast<ChromaKeyer*>(data)->onSoftnessChanged(pos);
 }	// onSoftnessChanged
+
+void ChromaKeyer::onDefringeChanged(int pos, void* data)
+{
+	assert(data != nullptr);
+	static_cast<ChromaKeyer*>(data)->onDefringeChanged(pos);
+}	// onDefringeChanged
 
 
 
@@ -146,6 +162,9 @@ void ImageKeyer::keyOut(const char* windowName, const char* backgroundFile, cons
 
 }	// replaceBackground
 
+
+
+
 class VideoKeyer : public ChromaKeyer
 {
 public:
@@ -161,14 +180,14 @@ private:
 
 	virtual void onMouse(int event, int x, int y, int flags) override;
 
-	virtual void onToleranceChanged(int pos) override;
+	//virtual void onToleranceChanged(int pos) override;
 
-	virtual void onSoftnessChanged(int pos) override;
+	//virtual void onSoftnessChanged(int pos) override;
 
 	bool paramsSet = false;
 	Mat curFrame;
 	Scalar color;
-	int tolerance = 0, softness = 0;
+	//int tolerance = 0, softness = 0;
 };	// VideoKeyer
 
 //void VideoKeyer::pickColor(const char* windowName)
@@ -205,10 +224,8 @@ bool VideoKeyer::setupKeyer(const char* windowName)
 	//createGui(windowName);
 
 	this->paramsSet = false;
-	this->tolerance = 10;	// default tolerance
-	this->softness = 50;	// default softness
-
-	createSettingsWindow(windowName, this->tolerance, this->softness);
+	
+	createSettingsWindow(windowName, 10, 50, 20);	// set the default parameters
 
 	VideoCapture capIn(getInputFile());
 	CV_Assert(capIn.isOpened());
@@ -252,17 +269,17 @@ void VideoKeyer::onMouse(int event, int x, int y, int flags)
 	}
 }	// onMouse
 
-void VideoKeyer::onToleranceChanged(int pos)
-{
-	assert(!this->paramsSet);
-	this->tolerance = pos;
-}	// onToleranceChanged
-
-void VideoKeyer::onSoftnessChanged(int pos)
-{
-	assert(!this->paramsSet);
-	this->softness = pos;
-}
+//void VideoKeyer::onToleranceChanged(int pos)
+//{
+//	assert(!this->paramsSet);
+//	this->tolerance = pos;
+//}	// onToleranceChanged
+//
+//void VideoKeyer::onSoftnessChanged(int pos)
+//{
+//	assert(!this->paramsSet);
+//	this->softness = pos;
+//}
 
 void VideoKeyer::keyOut(const char* windowName, const char* backgroundFile, const char* outputFile)
 {
