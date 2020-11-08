@@ -18,22 +18,52 @@ public:
 
 	String getInputFile() const { return inputFile; }
 
-	void keyOut(const char* windowName, const char* backgroundFile, const char* outputFile);
+	//void keyOut(const char* windowName, const char* backgroundFile, const char* outputFile);
+
+	void exec(const char* windowName, const char* backgroundFile, const char* outputFile);
 
 private:
 
+	//virtual void createGui(const char *windowName);
 	//virtual void pickColor(const char* windowName) = 0;
-	virtual void replaceBackground(const char* windowName, const char* backgroundFile, const char* outputFile) = 0;
+	virtual bool setupKeyer(const char *windowName) = 0;
+	virtual void keyOut(const char* windowName, const char* backgroundFile, const char* outputFile) = 0;
 
+	//void cleanupHelper() { }
 
 	String inputFile;
+	//bool bSetUp = false;
 };	// ChromaKeyer
 
-void ChromaKeyer::keyOut(const char* windowName, const char* backgroundFile, const char* outputFile)
+void ChromaKeyer::exec(const char* windowName, const char* backgroundFile, const char* outputFile)
 {
-	//pickColor(windowName);
-	replaceBackground(windowName, backgroundFile, outputFile);
-}
+	
+	/*struct Cleaner
+	{
+		constexpr Cleaner(ChromaKeyer *pKeyer, void(ChromaKeyer::*pCleanUp)()) noexcept : pKeyer(pKeyer), pCleanUp(pCleanUp) {}
+
+		~Cleaner()	{	(pKeyer->*pCleanUp)(); }
+
+	private:
+		ChromaKeyer* pKeyer;
+		void (ChromaKeyer::*pCleanUp)();
+	} cleaner(this, &ChromaKeyer::cleanupHelper);*/
+
+	try
+	{
+		if (setupKeyer(windowName))
+			keyOut(windowName, backgroundFile, outputFile);
+
+		//cleanup(windowName);
+	}
+	catch (const std::exception&)
+	{
+		destroyWindow(windowName);
+		//this->bSetUp = false;
+		//cleanup(windowName);
+		throw;
+	}
+}	// exec
 
 class ImageKeyer : public ChromaKeyer
 {
@@ -41,7 +71,8 @@ public:
 	ImageKeyer(const char* inputFile) : ChromaKeyer(inputFile) {}
 
 	//virtual void pickColor(const char* windowName) override;
-	virtual void replaceBackground(const char* windowName, const char* backgroundFile, const char* outputFile) override;
+	virtual bool setupKeyer(const char* windowName) override;
+	virtual void keyOut(const char* windowName, const char* backgroundFile, const char* outputFile) override;
 };	// ImageKeyer
 
 
@@ -49,7 +80,12 @@ public:
 //{
 //}
 
-void ImageKeyer::replaceBackground(const char* windowName, const char* backgroundFile, const char* outputFile)
+bool ImageKeyer::setupKeyer(const char* windowName)
+{
+	return false;
+}	// setupKeyer
+
+void ImageKeyer::keyOut(const char* windowName, const char* backgroundFile, const char* outputFile)
 {
 
 }	// replaceBackground
@@ -60,81 +96,82 @@ public:
 	VideoKeyer(const char* inputFile) : ChromaKeyer(inputFile) {}
 
 	//virtual void pickColor(const char* windowName) override;
-	virtual void replaceBackground(const char* windowName, const char* backgroundFile, const char* outputFile) override;
+	virtual bool setupKeyer(const char* windowName);
+	virtual void keyOut(const char* windowName, const char* backgroundFile, const char* outputFile) override;
+
+private:
+	bool paramsSet = false;
 };	// VideoKeyer
 
 //void VideoKeyer::pickColor(const char* windowName)
 //{
 //}
 
-void VideoKeyer::replaceBackground(const char* windowName, const char* backgroundFile, const char* outputFile)
+bool VideoKeyer::setupKeyer(const char* windowName)
 {
-	namedWindow(windowName);
+	//assert(!this->paramsSet);
 
-	VideoCapture capIn(getInputFile()), capBg(backgroundFile);
-	CV_Assert(capIn.isOpened());
-	CV_Assert(capBg.isOpened());
+	//namedWindow(windowName);
+	//setMouseCallback(windowName, onMouse, this);
 
-	int frameWidth = capIn.get(CAP_PROP_FRAME_WIDTH)
-	  , frameHeight = capIn.get(CAP_PROP_FRAME_HEIGHT)
-	  , frameCount = capIn.get(CAP_PROP_FRAME_COUNT);
+	//// TODO: add sliders
 
-	bool colorPicked = true;
-	Mat frameIn, frameBg;
-
-	for (int frameIndex = 0; ; ++frameIndex)
+	/*struct WindowDestroyer
 	{
-		capIn >> frameIn;
+		WindowDestroyer(const char* windowName) : windowName(windowName) {}
+		~WindowDestroyer() { destroyWindow(windowName); }
+		const char* windowName;
+	};*/
 
-		if (colorPicked)
+	//ChromaKeyer::WindowDestroyer destroyer(windowName);
+	//ChromaKeyer::setupKeyer(windowName, destroyer);
+	
+	//WindowDestroyer destroyer(windowName);
+
+	/*struct GuiCleaner
+	{
+		GuiCleaner() { ChromaKeyer::setupKeyer(windowName); }
+		~GuiCleaner() { destroyWindow(windowName); }
+	} cleaner;*/
+
+	//createGui(windowName);
+	
+
+	VideoCapture capIn(getInputFile());
+	CV_Assert(capIn.isOpened());
+
+	bool colorPicked = false;	// TODO: must be a member variable
+	Mat frame;
+
+	for (int frameIndex = 0, key = 0; !colorPicked && (key & 0xFF) != 27 ; ++frameIndex)
+	{
+		if (capIn.read(frame))
 		{
-			if (frameIn.empty())
-				break;	// looks like we've reached the end of the stream
-
-			if (!capBg.read(frameBg))
-			{
-				//CV_Assert(capBg.set(CAP_PROP_POS_FRAMES, 0));	
-				//capBg.read(frameBg);
-
-				capBg.release();	// perhaps, we've reached the end of the stream?
-				if (!capBg.open(backgroundFile) || !capBg.read(frameBg))
-				//if (!capBg.set(CAP_PROP_POS_FRAMES, 0) || !capBg.read(frameBg))	// try to rewind and read again
-					throw runtime_error("Failed to read the background frame.");
-			}	// empty
-
-			// TODO: 			
-			// resize the background frame
-			// replace the background
-			// show the frameIn
-			// wait for the key
-		}	// colorPicked
+			imshow(windowName, frame);
+			key = waitKey(10);
+		}	// frame read
 		else
 		{
-			if (frameIn.empty())
-			{				
-				if (frameIndex == 0)
-					throw runtime_error("Failed to read the input file. Is it empty?");
+			if (frameIndex == 0)
+				throw runtime_error("Failed to read the input file. Is it empty?");
 
-				//CV_Assert(capIn.set(CAP_PROP_POS_FRAMES, 0));
-				capIn.release();
-				capIn.open(getInputFile());
-				frameIndex = 0;
-				continue;
-			}	// frameIn is empty
-			else
-			{
-				// TODO:
-				// show the frameIn
-				// wait for the key
-			}	// frameIn is not empty
-		}	// !colorPicked
-
+			// Rewind and try to read a frame from the beginning
+			capIn.release();
+			capIn.open(getInputFile());
+			frameIndex = 0;
+			continue;
+		}	// empty frame
 	}	// for
 
-	//capIn.release();
+	//setMouseCallback(windowName, nullptr, 0);	// disable mouse handling
 
-	// TODO: destroy window
-}	// replaceBackground
+	return colorPicked;
+}	// setupKeyer
+
+void VideoKeyer::keyOut(const char* windowName, const char* backgroundFile, const char* outputFile)
+{
+
+}	// keyOut
 
 class ChromaKeyingFactory
 {
@@ -176,7 +213,7 @@ int main(int argc, char* argv[])
 	try
 	{
 		unique_ptr keyer = ChromaKeyingFactory::create(argv[1]);
-		keyer->keyOut("Chroma Keying", argv[2], argv[3]);
+		keyer->exec("Chroma Keying", argv[2], argv[3]);
 	}
 	catch (const std::exception& e)		// cv::Exception inherits from std::exception
 	{
