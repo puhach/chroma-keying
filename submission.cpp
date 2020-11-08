@@ -22,13 +22,19 @@ public:
 
 	void exec(const char* windowName, const char* backgroundFile, const char* outputFile);
 
+protected:
+	void createGui(const char *windowName);
+	
 private:
 
-	//virtual void createGui(const char *windowName);
-	//virtual void pickColor(const char* windowName) = 0;
-	virtual bool setupKeyer(const char *windowName) = 0;
+	virtual bool setupKeyer(const char* windowName) = 0;
+
 	virtual void keyOut(const char* windowName, const char* backgroundFile, const char* outputFile) = 0;
 
+	static void onMouseStatic(int event, int x, int y, int flags, void* data);
+		
+	// Descendants are free to provide their handlers, default implementation does nothing
+	virtual void onMouse(int event, int x, int y, int flags) {}		
 	//void cleanupHelper() { }
 
 	String inputFile;
@@ -58,6 +64,7 @@ void ChromaKeyer::exec(const char* windowName, const char* backgroundFile, const
 	}
 	catch (const std::exception&)
 	{
+		// TODO: perhaps, it makes sense to use RAII for cleanup
 		destroyWindow(windowName);
 		//this->bSetUp = false;
 		//cleanup(windowName);
@@ -65,14 +72,39 @@ void ChromaKeyer::exec(const char* windowName, const char* backgroundFile, const
 	}
 }	// exec
 
+
+void ChromaKeyer::createGui(const char* windowName) 
+{
+	//destroyWindow(windowName);	
+	namedWindow(windowName);
+	setMouseCallback(windowName, ChromaKeyer::onMouseStatic, this);
+	// TODO: add trackbars
+}	// createGui
+
+
+void ChromaKeyer::onMouseStatic(int event, int x, int y, int flags, void* data)
+{
+	assert(data != nullptr);
+	ChromaKeyer* keyer = static_cast<ChromaKeyer*>(data);
+	keyer->onMouse(event, x, y, flags);
+}	// onMouseStatic
+
+
+
+
 class ImageKeyer : public ChromaKeyer
 {
 public:
 	ImageKeyer(const char* inputFile) : ChromaKeyer(inputFile) {}
 
+protected:
+	
+private:
 	//virtual void pickColor(const char* windowName) override;
 	virtual bool setupKeyer(const char* windowName) override;
 	virtual void keyOut(const char* windowName, const char* backgroundFile, const char* outputFile) override;
+
+	// TODO: mouse and trackbar handlers
 };	// ImageKeyer
 
 
@@ -95,12 +127,19 @@ class VideoKeyer : public ChromaKeyer
 public:
 	VideoKeyer(const char* inputFile) : ChromaKeyer(inputFile) {}
 
-	//virtual void pickColor(const char* windowName) override;
-	virtual bool setupKeyer(const char* windowName);
-	virtual void keyOut(const char* windowName, const char* backgroundFile, const char* outputFile) override;
+protected:
 
 private:
+
+	//virtual void pickColor(const char* windowName) override;
+	virtual bool setupKeyer(const char* windowName) override;
+	virtual void keyOut(const char* windowName, const char* backgroundFile, const char* outputFile) override;
+
+	virtual void onMouse(int event, int x, int y, int flags) override;
+
 	bool paramsSet = false;
+	Mat curFrame;
+	Scalar color;
 };	// VideoKeyer
 
 //void VideoKeyer::pickColor(const char* windowName)
@@ -135,19 +174,21 @@ bool VideoKeyer::setupKeyer(const char* windowName)
 	} cleaner;*/
 
 	//createGui(windowName);
-	
+
+	this->paramsSet = false;
+
+	createGui(windowName);
 
 	VideoCapture capIn(getInputFile());
 	CV_Assert(capIn.isOpened());
 
-	bool colorPicked = false;	// TODO: must be a member variable
-	Mat frame;
+	//Mat frame;
 
-	for (int frameIndex = 0, key = 0; !colorPicked && (key & 0xFF) != 27 ; ++frameIndex)
+	for (int frameIndex = 0, key = 0; !this->paramsSet && (key & 0xFF) != 27 ; ++frameIndex)
 	{
-		if (capIn.read(frame))
+		if (capIn.read(this->curFrame))
 		{
-			imshow(windowName, frame);
+			imshow(windowName, this->curFrame);
 			key = waitKey(10);
 		}	// frame read
 		else
@@ -165,13 +206,28 @@ bool VideoKeyer::setupKeyer(const char* windowName)
 
 	//setMouseCallback(windowName, nullptr, 0);	// disable mouse handling
 
-	return colorPicked;
+	return this->paramsSet;
 }	// setupKeyer
+
+void VideoKeyer::onMouse(int event, int x, int y, int flags)
+{
+	assert(!this->paramsSet);
+
+	if (event == EVENT_LBUTTONDOWN)
+	{
+		// TODO: get pixel color from the point location
+		this->color = this->curFrame.at<Vec3b>(x, y);
+		this->paramsSet = true;
+	}
+}	// onMouse
 
 void VideoKeyer::keyOut(const char* windowName, const char* backgroundFile, const char* outputFile)
 {
 
 }	// keyOut
+
+
+
 
 class ChromaKeyingFactory
 {
