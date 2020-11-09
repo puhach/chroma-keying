@@ -9,6 +9,66 @@
 using namespace std;
 using namespace cv;
 
+class InputReader
+{
+public:
+
+	enum InputType
+	{
+		ImageType,
+		VideoType,
+		WebcamType
+	};
+
+	constexpr InputType getInputType() const noexcept { return this->inputType; }
+
+	virtual bool readNext(Mat &frame) = 0;
+	
+protected:
+	
+	InputReader(InputType inputType) noexcept : inputType(inputType) {}
+	// TODO: define copy/move ctors and assignment operators
+	~InputReader() = default;
+
+private:
+	InputType inputType;
+};	// InputReader
+
+
+
+class MediaFactory
+{
+public:
+	static unique_ptr<InputReader> createReader(const char* inputFile, bool loop = false);
+	//unique_ptr<OutputWriter> createWriter(const char *outputFile)
+
+private:
+	static const set<string> images;
+	static const set<string> video;
+	//static const set<string> images{ ".jpg", ".jpeg", ".png", ".bmp" };
+	//static const set<string> video{".mp4", ".avi"};
+};	// MediaFactory
+
+const set<string> MediaFactory::images{ ".jpg", ".jpeg", ".png", ".bmp" };
+const set<string> MediaFactory::video{".mp4", ".avi"};
+
+unique_ptr<InputReader> MediaFactory::createReader(const char* inputFile, bool loop)
+{
+	string ext = filesystem::path(inputFile).extension().string();
+	std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return std::tolower(c); });
+	
+	if (images.find(ext) != images.end())
+		return make_unique<ImageReader>(inputFile);
+	else if (video.find(ext) != video.end())
+		return make_unique<VideoReader>(inputFile);
+	else
+	{
+		// TODO: perhaps, implement a webcam keyer?
+
+		throw std::runtime_error(string("Input file type is not supported: ").append(ext));
+	}
+}	// createReader
+
 
 class ChromaKeyer
 {
