@@ -9,37 +9,73 @@
 using namespace std;
 using namespace cv;
 
-class InputReader
+class MediaSource
 {
 public:
 
-	enum InputType
+	enum MediaType
 	{
-		ImageType,
-		VideoType,
-		WebcamType
+		Image,
+		Video,
+		Webcam
 	};
 
-	constexpr InputType getInputType() const noexcept { return this->inputType; }
+	constexpr MediaType getMediaType() const noexcept { return this->mediaType; }
 
 	virtual bool readNext(Mat &frame) = 0;
 	
 protected:
 	
-	InputReader(InputType inputType) noexcept : inputType(inputType) {}
+	MediaSource(MediaType inputType) noexcept : mediaType(inputType) {}
 	// TODO: define copy/move ctors and assignment operators
-	~InputReader() = default;
+	virtual ~MediaSource() = default;
 
 private:
-	InputType inputType;
-};	// InputReader
+	MediaType mediaType;
+};	// MediaSource
 
+
+class ImageReader : public MediaSource
+{
+public:
+	ImageReader(const char* imageFile, bool loop = false);
+		
+	// TODO: implement copy/move constructors and assignment operators
+	~ImageReader() = default;
+
+	bool readNext(Mat& frame) override;
+
+private:
+	String imageFile;
+	bool loop = false;
+	bool imageRead = false;
+};	// ImageReader
+
+
+ImageReader::ImageReader(const char* imageFile, bool loop) 
+	: MediaSource(MediaSource::Image)
+	, imageFile(imageFile)
+	, loop(loop) 
+{
+	if (!cv::haveImageReader(this->imageFile))
+		throw runtime_error("No decoder for this image: " + this->imageFile);
+}	// ctor
+
+bool ImageReader::readNext(Mat& frame)
+{
+	if (this->imageRead && !this->loop)
+		return false;	// don't double read
+
+	frame = imread(this->imageFile, IMREAD_COLOR);
+	CV_Assert(!frame.empty());	
+	return (this->imageRead = true);
+}	// readNext
 
 
 class MediaFactory
 {
 public:
-	static unique_ptr<InputReader> createReader(const char* inputFile, bool loop = false);
+	static unique_ptr<MediaSource> createReader(const char* inputFile, bool loop = false);
 	//unique_ptr<OutputWriter> createWriter(const char *outputFile)
 
 private:
@@ -50,9 +86,9 @@ private:
 };	// MediaFactory
 
 const set<string> MediaFactory::images{ ".jpg", ".jpeg", ".png", ".bmp" };
-const set<string> MediaFactory::video{".mp4", ".avi"};
+const set<string> MediaFactory::video{ ".mp4", ".avi"};
 
-unique_ptr<InputReader> MediaFactory::createReader(const char* inputFile, bool loop)
+unique_ptr<MediaSource> MediaFactory::createReader(const char* inputFile, bool loop)
 {
 	string ext = filesystem::path(inputFile).extension().string();
 	std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return std::tolower(c); });
@@ -96,7 +132,7 @@ bool ChromaKeyer::setUp(const char* inputFile)
 {
 	this->paramsSet = false;
 
-	unique_ptr<InputReader> reader = MediaFactory::createReader(inputFile, true /*loop*/);
+	unique_ptr<MediaSource> reader = MediaFactory::createReader(inputFile, true /*loop*/);
 
 	namedWindow(this->windowName);
 	setMouseCallback(this->windowName, ChromaKeyer::onMouse, this);
