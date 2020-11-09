@@ -22,9 +22,16 @@ public:
 
 	void exec(const char* windowName, const char* backgroundFile, const char* outputFile);
 
+	constexpr int getTolerance() const noexcept { return this->tolerance; }
+
+	constexpr int getSoftness() const noexcept { return this->softness; }
+
+	constexpr int getDefringe() const noexcept { return this->defringe; }
+
 protected:
+
 	void createSettingsWindow(const char *windowName, int tolerance, int softness, int defringe);
-	
+
 private:
 
 	virtual bool setupKeyer(const char* windowName) = 0;
