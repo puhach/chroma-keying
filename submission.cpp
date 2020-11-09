@@ -152,6 +152,11 @@ private:
 	virtual void keyOut(const char* windowName, const char* backgroundFile, const char* outputFile) override;
 
 	// TODO: mouse and trackbar handlers
+	virtual void onMouse(int event, int x, int y, int flags) override;
+
+	bool paramsSet = false;
+	Scalar color;
+	Mat imSrc;
 };	// ImageKeyer
 
 
@@ -161,8 +166,33 @@ private:
 
 bool ImageKeyer::setupKeyer(const char* windowName)
 {
-	return false;
+	this->paramsSet = false;
+
+	createSettingsWindow(windowName, 10, 30, 20);
+
+	this->imSrc = imread(getInputFile(), IMREAD_COLOR);
+	CV_Assert(!this->imSrc.empty());
+
+	for (int key = 0; (key & 0xFF) != 27; )
+	{
+		imshow(windowName, this->imSrc);
+		key = waitKey();
+	}
+
+	destroyWindow(windowName);
+	return this->paramsSet;
 }	// setupKeyer
+
+void ImageKeyer::onMouse(int event, int x, int y, int flags)
+{
+	//assert(!this->paramsSet);
+
+	if (event == EVENT_LBUTTONDOWN)
+	{
+		this->color = this->imSrc.at<Vec3b>(y, x);
+		this->paramsSet = false;
+	}
+}
 
 void ImageKeyer::keyOut(const char* windowName, const char* backgroundFile, const char* outputFile)
 {
@@ -192,9 +222,9 @@ private:
 	//virtual void onSoftnessChanged(int pos) override;
 
 	bool paramsSet = false;
-	Mat curFrame;
 	Scalar color;
 	//int tolerance = 0, softness = 0;
+	Mat curFrame;
 };	// VideoKeyer
 
 //void VideoKeyer::pickColor(const char* windowName)
