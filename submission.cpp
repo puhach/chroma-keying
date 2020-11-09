@@ -22,7 +22,8 @@ public:
 
 	constexpr MediaType getMediaType() const noexcept { return this->mediaType; }
 
-	string_view getMediaPath() const noexcept {	return this->mediaPath; }
+	//string_view getMediaPath() const noexcept {	return this->mediaPath; }
+	const string& getMediaPath() const noexcept { return this->mediaPath; }
 	//string getMediaPath() const { return this->mediaPath; }
 
 	constexpr bool isLooped() const noexcept { return this->looped; }
@@ -34,7 +35,7 @@ public:
 protected:
 	
 	//MediaSource(MediaType inputType, const char *mediaPath, bool looped) //noexcept 
-	MediaSource(MediaType inputType, string mediaPath, bool looped)
+	MediaSource(MediaType inputType, const string &mediaPath, bool looped)
 		: mediaType(inputType)
 		, mediaPath(mediaPath)
 		, looped(looped) {}
@@ -52,7 +53,8 @@ class ImageReader : public MediaSource
 {
 public:
 	//ImageReader(const char* imageFile, bool looped = false);
-	ImageReader(string imageFile, bool looped = false);
+	//ImageReader(string imageFile, bool looped = false);
+	ImageReader(const string& imageFile, bool looped = false);
 		
 	// TODO: implement copy/move constructors and assignment operators
 	~ImageReader() = default;
@@ -67,10 +69,10 @@ private:
 };	// ImageReader
 
 
-//ImageReader::ImageReader(const char* imageFile, bool looped) 
-//	: MediaSource(MediaSource::Image, imageFile, looped)
-ImageReader::ImageReader(string imageFile, bool looped)
-	: MediaSource(MediaSource::Image, cv::haveImageReader(imageFile) ? std::move(imageFile) : throw runtime_error("No decoder for this image: " + imageFile), looped)
+//ImageReader::ImageReader(string imageFile, bool looped)
+//	: MediaSource(MediaSource::Image, cv::haveImageReader(imageFile) ? std::move(imageFile) : throw runtime_error("No decoder for this image: " + imageFile), looped)
+ImageReader::ImageReader(const string &imageFile, bool looped)
+	: MediaSource(MediaSource::Image, cv::haveImageReader(imageFile) ? imageFile : throw runtime_error("No decoder for this image: " + imageFile), looped)
 {
 	//if (!cv::haveImageReader(imageFile))
 	//	throw runtime_error("No decoder for this image: " + imageFile);
@@ -88,6 +90,50 @@ bool ImageReader::readNext(Mat& frame)
 	CV_Assert(!frame.empty());	
 	return (this->imageRead = true);
 }	// readNext
+
+
+class VideoReader : public MediaSource
+{
+public:
+	//VideoReader(const char* inputFile, bool loop = false);
+	//VideoReader(string inputFile, bool looped = false);
+	VideoReader(const string &videoFile, bool looped = false);
+
+	virtual bool readNext(Mat& frame) override;
+
+	// TODO
+
+private:
+	String inputFile;
+	VideoCapture cap;
+};	// VideoReader
+
+//VideoReader::VideoReader(string inputFile, bool looped)
+//	: MediaSource(MediaSource::Video, std::move(inputFile), looped)
+VideoReader::VideoReader(const string &videoFile, bool looped)
+	: MediaSource(MediaSource::Video, videoFile, looped)
+	, cap(videoFile)
+{
+	CV_Assert(cap.isOpened());
+}
+
+bool VideoReader::readNext(Mat& frame)
+{
+	if (cap.read(frame))
+		return true;
+
+	if (isLooped())
+	{
+		// Try closing and read again
+		cap.release();
+		if (!cap.open(getMediaPath()) || !cap.read(frame))
+			throw runtime_error("Failed to read the input file.");
+
+		return true;
+	}	// looped
+	else return false;	// probably, the end of the stream
+}	// readNext
+
 
 
 class MediaFactory
