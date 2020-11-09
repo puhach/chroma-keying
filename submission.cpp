@@ -22,23 +22,37 @@ public:
 
 	constexpr MediaType getMediaType() const noexcept { return this->mediaType; }
 
+	string_view getMediaPath() const noexcept {	return this->mediaPath; }
+	//string getMediaPath() const { return this->mediaPath; }
+
+	constexpr bool isLooped() const noexcept { return this->looped; }
+
 	virtual bool readNext(Mat &frame) = 0;
 	
+	virtual ~MediaSource() = default;
+
 protected:
 	
-	MediaSource(MediaType inputType) noexcept : mediaType(inputType) {}
+	//MediaSource(MediaType inputType, const char *mediaPath, bool looped) //noexcept 
+	MediaSource(MediaType inputType, string mediaPath, bool looped)
+		: mediaType(inputType)
+		, mediaPath(mediaPath)
+		, looped(looped) {}
+
 	// TODO: define copy/move ctors and assignment operators
-	virtual ~MediaSource() = default;
 
 private:
 	MediaType mediaType;
+	string mediaPath;
+	bool looped = false;
 };	// MediaSource
 
 
 class ImageReader : public MediaSource
 {
 public:
-	ImageReader(const char* imageFile, bool loop = false);
+	//ImageReader(const char* imageFile, bool looped = false);
+	ImageReader(string imageFile, bool looped = false);
 		
 	// TODO: implement copy/move constructors and assignment operators
 	~ImageReader() = default;
@@ -46,27 +60,31 @@ public:
 	bool readNext(Mat& frame) override;
 
 private:
-	String imageFile;
+	/*String imageFile;
 	bool loop = false;
+	bool imageRead = false;*/
 	bool imageRead = false;
 };	// ImageReader
 
 
-ImageReader::ImageReader(const char* imageFile, bool loop) 
-	: MediaSource(MediaSource::Image)
-	, imageFile(imageFile)
-	, loop(loop) 
+//ImageReader::ImageReader(const char* imageFile, bool looped) 
+//	: MediaSource(MediaSource::Image, imageFile, looped)
+ImageReader::ImageReader(string imageFile, bool looped)
+	: MediaSource(MediaSource::Image, cv::haveImageReader(imageFile) ? std::move(imageFile) : throw runtime_error("No decoder for this image: " + imageFile), looped)
 {
-	if (!cv::haveImageReader(this->imageFile))
-		throw runtime_error("No decoder for this image: " + this->imageFile);
+	//if (!cv::haveImageReader(imageFile))
+	//	throw runtime_error("No decoder for this image: " + imageFile);
 }	// ctor
 
 bool ImageReader::readNext(Mat& frame)
 {
-	if (this->imageRead && !this->loop)
+	//if (this->imageRead && !this->loop)
+	if (this->imageRead && !isLooped())
 		return false;	// don't double read
 
-	frame = imread(this->imageFile, IMREAD_COLOR);
+	//frame = imread(this->imageFile, IMREAD_COLOR);
+	frame = imread(String{ getMediaPath() }, IMREAD_COLOR);
+	//frame = imread(getMediaPath(), IMREAD_COLOR);
 	CV_Assert(!frame.empty());	
 	return (this->imageRead = true);
 }	// readNext
@@ -94,9 +112,9 @@ unique_ptr<MediaSource> MediaFactory::createReader(const char* inputFile, bool l
 	std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return std::tolower(c); });
 	
 	if (images.find(ext) != images.end())
-		return make_unique<ImageReader>(inputFile);
+		return make_unique<ImageReader>(inputFile, loop);
 	else if (video.find(ext) != video.end())
-		return make_unique<VideoReader>(inputFile);
+		return make_unique<VideoReader>(inputFile, loop);
 	else
 	{
 		// TODO: perhaps, implement a webcam keyer?
@@ -140,7 +158,7 @@ bool ChromaKeyer::setUp(const char* inputFile)
 	createTrackbar("Softness", windowName, &this->softness, 100, nullptr, this);
 	createTrackbar("Defringe", windowName, &this->defringe, 100, nullptr, this);
 
-	for (int key = 0; key & 0xFF != 27; )
+	for (int key = 0; (key & 0xFF) != 27; )
 	{
 		reader->readNext(this->curFrame);
 		imshow(this->windowName, this->curFrame);
@@ -167,7 +185,49 @@ void ChromaKeyer::onMouse(int event, int x, int y, int flags, void* data)
 
 void ChromaKeyer::keyOut(const char* inputFile, const char* backgroundFile, const char* outputFile)
 {
-	// TODO
+	unique_ptr<MediaSource> srcIn = MediaFactory::createReader(inputFile, false)
+		, srcBg = MediaFactory::createReader(backgroundFile, true);
+
+	unique_ptr<MediaSink> sink = MediaFactory::createWriter(outputFile);
+
+	if (srcIn->getMediaType() == MediaSource::Video)
+	{
+		if (sink->getMediaType() != MediaSink::Video && sink->getMediaType() != MediaSink::Dummy)
+			throw runtime_error("Mismatching media types: the input file is a video, but the output is not.");
+	}
+	else if (srcIn->getMediaType() == MediaSource::Image)
+	{
+		if (srcBg->getMediaType() != MediaSource::Image)
+			throw runtime_error("Background must be an image.");
+
+		if (sink->getMediaType() != MediaSink::Image && sink->getMediaType() != MediaSink::Dummy)
+			throw runtime_error("Mismatching media types: the input file is an image, but the output is not.");
+	}
+	else
+	{
+		// TODO: check other media types 
+	}
+
+	for (int key = 0; srcIn->readNext(this->curFrame) && (key & 0xFF) != 27; )
+	{
+		//imshow(this->windowName, this->curFrame);
+		Mat bgFrame;
+		srcBg->readNext(bgFrame);
+
+		// resize the background frame to match the input frame
+		cv::resize(bgFrame, bgFrame, this->curFrame.size(), 0, 0, 
+			bgFrame.rows*bgFrame.cols > this->curFrame.rows*this->curFrame.cols ? INTER_AREA : INTER_CUBIC);
+
+		// key out using the resized background frame
+		Mat resFrame = keyOutFrame(bgFrame);
+
+		// write the resulting frame to the sink
+		sink->write(resFrame);
+
+		imshow(this->windowName, resFrame);
+
+		key = waitKey(10);
+	}	// for
 }	// keyOut
 
 ChromaKeyer::~ChromaKeyer()
