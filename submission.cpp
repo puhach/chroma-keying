@@ -15,8 +15,8 @@ public:
 
 	enum MediaType
 	{
-		Image,
-		Video,
+		ImageFile,
+		VideoFile,
 		Webcam
 	};
 
@@ -69,7 +69,7 @@ private:
 //ImageReader::ImageReader(string imageFile, bool looped)
 //	: MediaSource(MediaSource::Image, cv::haveImageReader(imageFile) ? std::move(imageFile) : throw runtime_error("No decoder for this image: " + imageFile), looped)
 ImageReader::ImageReader(const string &imageFile, bool looped)
-	: MediaSource(MediaSource::Image, cv::haveImageReader(imageFile) ? imageFile : throw runtime_error("No decoder for this image file: " + imageFile), looped)
+	: MediaSource(MediaSource::ImageFile, cv::haveImageReader(imageFile) ? imageFile : throw runtime_error("No decoder for this image file: " + imageFile), looped)
 {
 	//if (!cv::haveImageReader(imageFile))
 	//	throw runtime_error("No decoder for this image: " + imageFile);
@@ -108,7 +108,7 @@ private:
 //VideoReader::VideoReader(string inputFile, bool looped)
 //	: MediaSource(MediaSource::Video, std::move(inputFile), looped)
 VideoReader::VideoReader(const string &videoFile, bool looped)
-	: MediaSource(MediaSource::Video, videoFile, looped)
+	: MediaSource(MediaSource::VideoFile, videoFile, looped)
 	, cap(videoFile)
 {
 	CV_Assert(cap.isOpened());
@@ -138,8 +138,8 @@ public:
 
 	enum MediaType
 	{
-		Image,
-		Video,
+		ImageFile,
+		VideoFile,
 		Dummy
 	};
 
@@ -173,24 +173,52 @@ public:
 };	// DummyWriter
 
 
-class ImageWriter: public MediaSink
+class ImageFileWriter: public MediaSink
 {
 public:
-	ImageWriter(const string& imagePath, Size size)
-		: MediaSink(MediaSink::Image, cv::haveImageWriter(imagePath) ? imagePath : throw runtime_error("No encoder for this image file: " + imagePath))
-		, size(move(size)) { }
+	ImageFileWriter(const string& imageFile, Size frameSize)
+		: MediaSink(MediaSink::ImageFile, cv::haveImageWriter(imageFile) ? imageFile : throw runtime_error("No encoder for this image file: " + imageFile))
+		, frameSize(move(frameSize)) { }
+	// TODO: implement copy/move ctors and assignment operators
 
 	virtual void write(const Mat& frame) override;
 
 private:
-	Size size;
-};	// ImageWriter
+	Size frameSize;
+};	// ImageFileWriter
 
-void ImageWriter::write(const Mat& frame)
+void ImageFileWriter::write(const Mat& frame)
 {
-	CV_Assert(frame.size() == this->size);
+	CV_Assert(frame.size() == this->frameSize);
 	if (!imwrite(getMediaPath(), frame))
 		throw runtime_error("Failed to write the output image.");
+}	// write
+
+
+class VideoFileWriter : public MediaSink
+{
+public:
+	VideoFileWriter(const string& videoFile, Size frameSize, const char (&fourcc)[4], double fps);
+	// TODO: implement copy/move ctors and assignment operators
+
+	virtual void write(const Mat& frame) override;
+
+private:
+	VideoWriter writer;
+	//Size frameSize;
+};	// VideoWriter
+
+// TODO: can be defined in-class
+VideoFileWriter::VideoFileWriter(const string& videoFile, Size frameSize, const char (&fourcc)[4], double fps)
+	: MediaSink(MediaSink::VideoFile, videoFile)
+	, writer(videoFile, VideoWriter::fourcc(fourcc[0], fourcc[1], fourcc[2], fourcc[3]), fps, move(frameSize), true)
+	//, frameSize(move(frameSize))
+{
+}
+
+void VideoFileWriter::write(const Mat& frame)
+{
+	writer.write(frame);
 }	// write
 
 
@@ -244,9 +272,16 @@ unique_ptr<MediaSink> MediaFactory::createWriter(const string &outputFile, Size 
 
 	string ext = MediaFactory::getFileExtension(outputFile);
 	if (images.find(ext) != images.end())
-		return make_unique<ImageWriter>(outputFile, frameSize);
+		return make_unique<ImageFileWriter>(outputFile, frameSize);
 	else if (video.find(ext) != video.end())
-		return make_unique<VideoWriter>(outputFile, frameSize);	
+	{
+		//char* pfcc = new char[4];
+		//char fcc[] = { 'x','v','i' };
+
+		// Help the compiler to deduce the argument types which are passed to the constructor
+		return make_unique<VideoFileWriter, const string &, Size, const char(&)[4], double>(outputFile, move(frameSize), { 'x','v','i','d' }, 30);
+		//return make_unique<VideoFileWriter>(outputFile, frameSize, "XVID", 30);
+	}
 	else
 	{
 		// TODO: consider implementing other sinks
@@ -324,17 +359,17 @@ void ChromaKeyer::keyOut(const char* inputFile, const char* backgroundFile, cons
 
 	unique_ptr<MediaSink> sink = MediaFactory::createWriter(outputFile, this->curFrame.size());	// frame size obtained during the parameters setting phase
 
-	if (srcIn->getMediaType() == MediaSource::Video)
+	if (srcIn->getMediaType() == MediaSource::VideoFile)
 	{
-		if (sink->getMediaType() != MediaSink::Video && sink->getMediaType() != MediaSink::Dummy)
+		if (sink->getMediaType() != MediaSink::VideoFile && sink->getMediaType() != MediaSink::Dummy)
 			throw runtime_error("Mismatching media types: the input file is a video, but the output is not.");
 	}
-	else if (srcIn->getMediaType() == MediaSource::Image)
+	else if (srcIn->getMediaType() == MediaSource::ImageFile)
 	{
-		if (srcBg->getMediaType() != MediaSource::Image)
+		if (srcBg->getMediaType() != MediaSource::ImageFile)
 			throw runtime_error("Background must be an image.");
 
-		if (sink->getMediaType() != MediaSink::Image && sink->getMediaType() != MediaSink::Dummy)
+		if (sink->getMediaType() != MediaSink::ImageFile && sink->getMediaType() != MediaSink::Dummy)
 			throw runtime_error("Mismatching media types: the input file is an image, but the output is not.");
 	}
 	else
