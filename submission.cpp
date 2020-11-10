@@ -69,7 +69,7 @@ private:
 //ImageReader::ImageReader(string imageFile, bool looped)
 //	: MediaSource(MediaSource::Image, cv::haveImageReader(imageFile) ? std::move(imageFile) : throw runtime_error("No decoder for this image: " + imageFile), looped)
 ImageReader::ImageReader(const string &imageFile, bool looped)
-	: MediaSource(MediaSource::Image, cv::haveImageReader(imageFile) ? imageFile : throw runtime_error("No decoder for this image: " + imageFile), looped)
+	: MediaSource(MediaSource::Image, cv::haveImageReader(imageFile) ? imageFile : throw runtime_error("No decoder for this image file: " + imageFile), looped)
 {
 	//if (!cv::haveImageReader(imageFile))
 	//	throw runtime_error("No decoder for this image: " + imageFile);
@@ -154,7 +154,7 @@ public:
 protected:
 	MediaSink(MediaType mediaType, const string& mediaPath)
 		: mediaType(mediaType)
-		, mediaPath(mediaPath) {}
+		, mediaPath(mediaPath) {}	// std::string's copy constructor is not noexcept 
 
 private:
 	MediaType mediaType;
@@ -171,6 +171,28 @@ public:
 
 	virtual void write(const Mat &frame) override { }
 };	// DummyWriter
+
+
+class ImageWriter: public MediaSink
+{
+public:
+	ImageWriter(const string& imagePath, Size size)
+		: MediaSink(MediaSink::Image, cv::haveImageWriter(imagePath) ? imagePath : throw runtime_error("No encoder for this image file: " + imagePath))
+		, size(move(size)) { }
+
+	virtual void write(const Mat& frame) override;
+
+private:
+	Size size;
+};	// ImageWriter
+
+void ImageWriter::write(const Mat& frame)
+{
+	CV_Assert(frame.size() == this->size);
+	if (!imwrite(getMediaPath(), frame))
+		throw runtime_error("Failed to write the output image.");
+}	// write
+
 
 
 class MediaFactory
