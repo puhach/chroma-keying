@@ -20,13 +20,13 @@ public:
 		Webcam
 	};
 
-	constexpr MediaType getMediaType() const noexcept { return this->mediaType; }
+	MediaType getMediaType() const noexcept { return this->mediaType; }
 
 	//string_view getMediaPath() const noexcept {	return this->mediaPath; }
 	const string& getMediaPath() const noexcept { return this->mediaPath; }
 	//string getMediaPath() const { return this->mediaPath; }
 
-	constexpr bool isLooped() const noexcept { return this->looped; }
+	bool isLooped() const noexcept { return this->looped; }
 
 	virtual bool readNext(Mat &frame) = 0;
 	
@@ -62,9 +62,6 @@ public:
 	bool readNext(Mat& frame) override;
 
 private:
-	/*String imageFile;
-	bool loop = false;
-	bool imageRead = false;*/
 	bool imageRead = false;
 };	// ImageReader
 
@@ -135,39 +132,92 @@ bool VideoReader::readNext(Mat& frame)
 }	// readNext
 
 
+class MediaSink
+{
+public:
+
+	enum MediaType
+	{
+		Image,
+		Video,
+		Dummy
+	};
+
+	MediaType getMediaType() const noexcept { return this->mediaType; }
+
+	const string& getMediaPath() const noexcept { return this->mediaPath; }
+
+	virtual ~MediaSink() = default;
+
+protected:
+	MediaSink(MediaType mediaType, const string& mediaPath)
+		: mediaType(mediaType)
+		, mediaPath(mediaPath) {}
+
+private:
+	MediaType mediaType;
+	string mediaPath;
+};	// MediaSink
 
 class MediaFactory
 {
 public:
-	static unique_ptr<MediaSource> createReader(const char* inputFile, bool loop = false);
-	//unique_ptr<OutputWriter> createWriter(const char *outputFile)
+	static unique_ptr<MediaSource> createReader(const string &inputFile, bool loop = false);
+	static unique_ptr<MediaSink> createWriter(const string &outputFile, Size frameSize);
 
 private:
 	static const set<string> images;
 	static const set<string> video;
 	//static const set<string> images{ ".jpg", ".jpeg", ".png", ".bmp" };
 	//static const set<string> video{".mp4", ".avi"};
+
+	static string getFileExtension(const string &inputFile);
 };	// MediaFactory
 
 const set<string> MediaFactory::images{ ".jpg", ".jpeg", ".png", ".bmp" };
 const set<string> MediaFactory::video{ ".mp4", ".avi"};
 
-unique_ptr<MediaSource> MediaFactory::createReader(const char* inputFile, bool loop)
+string MediaFactory::getFileExtension(const string &fileName)
 {
-	string ext = filesystem::path(inputFile).extension().string();
+	string ext = filesystem::path(fileName).extension().string();
 	std::transform(ext.begin(), ext.end(), ext.begin(), [](char c) { return std::tolower(c); });
+	return ext;
+}
+
+unique_ptr<MediaSource> MediaFactory::createReader(const string &inputFile, bool loop)
+{
+	string ext = getFileExtension(inputFile);
 	
 	if (images.find(ext) != images.end())
 		return make_unique<ImageReader>(inputFile, loop);
 	else if (video.find(ext) != video.end())
 		return make_unique<VideoReader>(inputFile, loop);
-	else
+	else 
 	{
 		// TODO: perhaps, implement a webcam keyer?
 
 		throw std::runtime_error(string("Input file type is not supported: ").append(ext));
 	}
 }	// createReader
+
+
+unique_ptr<MediaSink> MediaFactory::createWriter(const string &outputFile, Size frameSize)
+{
+	if (outputFile.empty())
+		return make_unique<DummyWriter>(outputFile);
+
+	string ext = MediaFactory::getFileExtension(outputFile);
+	if (images.find(ext) != images.end())
+		return make_unique<ImageWriter>(outputFile, frameSize);
+	else if (video.find(ext) != video.end())
+		return make_unique<VideoWriter>(outputFile, frameSize);	
+	else
+	{
+		// TODO: consider implementing other sinks
+		throw runtime_error(string("Output file type is not supported: ").append(ext));
+	}
+}	// createWriter
+
 
 
 class ChromaKeyer
@@ -231,10 +281,12 @@ void ChromaKeyer::onMouse(int event, int x, int y, int flags, void* data)
 
 void ChromaKeyer::keyOut(const char* inputFile, const char* backgroundFile, const char* outputFile)
 {
+	assert(this->paramsSet);
+
 	unique_ptr<MediaSource> srcIn = MediaFactory::createReader(inputFile, false)
 		, srcBg = MediaFactory::createReader(backgroundFile, true);
 
-	unique_ptr<MediaSink> sink = MediaFactory::createWriter(outputFile);
+	unique_ptr<MediaSink> sink = MediaFactory::createWriter(outputFile, this->curFrame.size());	// frame size obtained during the parameters setting phase
 
 	if (srcIn->getMediaType() == MediaSource::Video)
 	{
