@@ -147,6 +147,8 @@ public:
 
 	const string& getMediaPath() const noexcept { return this->mediaPath; }
 
+	virtual void write(const Mat &frame) = 0;
+
 	virtual ~MediaSink() = default;
 
 protected:
@@ -158,6 +160,18 @@ private:
 	MediaType mediaType;
 	string mediaPath;
 };	// MediaSink
+
+
+class DummyWriter: public MediaSink
+{
+public:
+	DummyWriter() : MediaSink(MediaSink::Dummy, "") {}
+	// TODO: define copy/move constructors and assignment operators
+	~DummyWriter() = default;
+
+	virtual void write(const Mat &frame) override { }
+};	// DummyWriter
+
 
 class MediaFactory
 {
