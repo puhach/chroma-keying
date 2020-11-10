@@ -49,33 +49,33 @@ private:
 };	// MediaSource
 
 
-class ImageReader : public MediaSource
+class ImageFileReader : public MediaSource
 {
 public:
 	//ImageReader(const char* imageFile, bool looped = false);
 	//ImageReader(string imageFile, bool looped = false);
-	ImageReader(const string& imageFile, bool looped = false);
+	ImageFileReader(const string& imageFile, bool looped = false);
 		
 	// TODO: implement copy/move constructors and assignment operators
-	~ImageReader() = default;
+	~ImageFileReader() = default;
 
 	bool readNext(Mat& frame) override;
 
 private:
 	bool imageRead = false;
-};	// ImageReader
+};	// ImageFileReader
 
 
 //ImageReader::ImageReader(string imageFile, bool looped)
 //	: MediaSource(MediaSource::Image, cv::haveImageReader(imageFile) ? std::move(imageFile) : throw runtime_error("No decoder for this image: " + imageFile), looped)
-ImageReader::ImageReader(const string &imageFile, bool looped)
+ImageFileReader::ImageFileReader(const string &imageFile, bool looped)
 	: MediaSource(MediaSource::ImageFile, cv::haveImageReader(imageFile) ? imageFile : throw runtime_error("No decoder for this image file: " + imageFile), looped)
 {
 	//if (!cv::haveImageReader(imageFile))
 	//	throw runtime_error("No decoder for this image: " + imageFile);
 }	// ctor
 
-bool ImageReader::readNext(Mat& frame)
+bool ImageFileReader::readNext(Mat& frame)
 {
 	//if (this->imageRead && !this->loop)
 	if (this->imageRead && !isLooped())
@@ -89,12 +89,12 @@ bool ImageReader::readNext(Mat& frame)
 }	// readNext
 
 
-class VideoReader : public MediaSource
+class VideoFileReader : public MediaSource
 {
 public:
-	//VideoReader(const char* inputFile, bool loop = false);
-	//VideoReader(string inputFile, bool looped = false);
-	VideoReader(const string &videoFile, bool looped = false);
+	//VideoFileReader(const char* inputFile, bool loop = false);
+	//VideoFileReader(string inputFile, bool looped = false);
+	VideoFileReader(const string &videoFile, bool looped = false);
 
 	virtual bool readNext(Mat& frame) override;
 
@@ -103,18 +103,18 @@ public:
 private:
 	String inputFile;
 	VideoCapture cap;
-};	// VideoReader
+};	// VideoFileReader
 
 //VideoReader::VideoReader(string inputFile, bool looped)
 //	: MediaSource(MediaSource::Video, std::move(inputFile), looped)
-VideoReader::VideoReader(const string &videoFile, bool looped)
+VideoFileReader::VideoFileReader(const string &videoFile, bool looped)
 	: MediaSource(MediaSource::VideoFile, videoFile, looped)
 	, cap(videoFile)
 {
 	CV_Assert(cap.isOpened());
 }
 
-bool VideoReader::readNext(Mat& frame)
+bool VideoFileReader::readNext(Mat& frame)
 {
 	if (cap.read(frame))
 		return true;
@@ -253,9 +253,9 @@ unique_ptr<MediaSource> MediaFactory::createReader(const string &inputFile, bool
 	string ext = getFileExtension(inputFile);
 	
 	if (images.find(ext) != images.end())
-		return make_unique<ImageReader>(inputFile, loop);
+		return make_unique<ImageFileReader>(inputFile, loop);
 	else if (video.find(ext) != video.end())
-		return make_unique<VideoReader>(inputFile, loop);
+		return make_unique<VideoFileReader>(inputFile, loop);
 	else 
 	{
 		// TODO: perhaps, implement a webcam keyer?
@@ -268,7 +268,7 @@ unique_ptr<MediaSource> MediaFactory::createReader(const string &inputFile, bool
 unique_ptr<MediaSink> MediaFactory::createWriter(const string &outputFile, Size frameSize)
 {
 	if (outputFile.empty())
-		return make_unique<DummyWriter>(outputFile);
+		return make_unique<DummyWriter>();
 
 	string ext = MediaFactory::getFileExtension(outputFile);
 	if (images.find(ext) != images.end())
@@ -279,7 +279,7 @@ unique_ptr<MediaSink> MediaFactory::createWriter(const string &outputFile, Size 
 		//char fcc[] = { 'x','v','i' };
 
 		// Help the compiler to deduce the argument types which are passed to the constructor
-		return make_unique<VideoFileWriter, const string &, Size, const char(&)[4], double>(outputFile, move(frameSize), { 'x','v','i','d' }, 30);
+		return make_unique<VideoFileWriter, const string &, Size, const char(&)[4], double>(outputFile, move(frameSize), { 'M','P','4','V' }, 30);
 		//return make_unique<VideoFileWriter>(outputFile, frameSize, "XVID", 30);
 	}
 	else
@@ -304,18 +304,24 @@ public:
 
 private:
 
+	Mat keyOutFrame(const Mat &background);
+
 	static void onMouse(int event, int x, int y, int flags, void* data);
 
 	String windowName;
 	bool paramsSet = false;
 	Mat curFrame;
 	Scalar color;
+	//int pixelX = -1, pixelY = -1;
 	int tolerance = 0, softness = 0, defringe = 0;
 };	// ChromaKeyer
 
 bool ChromaKeyer::setUp(const char* inputFile)
 {
 	this->paramsSet = false;
+	this->tolerance = 10;
+	this->softness = 30;
+	this->defringe = 20;
 
 	unique_ptr<MediaSource> reader = MediaFactory::createReader(inputFile, true /*loop*/);
 
@@ -325,7 +331,7 @@ bool ChromaKeyer::setUp(const char* inputFile)
 	createTrackbar("Softness", windowName, &this->softness, 100, nullptr, this);
 	createTrackbar("Defringe", windowName, &this->defringe, 100, nullptr, this);
 
-	for (int key = 0; (key & 0xFF) != 27; )
+	for (int key = 0; !this->paramsSet && (key & 0xFF) != 27; )
 	{
 		reader->readNext(this->curFrame);
 		imshow(this->windowName, this->curFrame);
@@ -397,7 +403,60 @@ void ChromaKeyer::keyOut(const char* inputFile, const char* backgroundFile, cons
 
 		key = waitKey(10);
 	}	// for
+
+	destroyWindow(this->windowName);
 }	// keyOut
+
+Mat ChromaKeyer::keyOutFrame(const Mat& background)
+{
+	Mat frameF, bgF;
+	this->curFrame.convertTo(frameF, CV_32F, 1.0/255);
+	background.convertTo(bgF, CV_32F, 1.0/255);
+	//frameF /= 255;
+	//bgF /= 255;
+
+	Mat frameHSV, bgHSV;	
+	cvtColor(frameF, frameHSV, COLOR_BGR2HSV);
+	cvtColor(bgF, bgHSV, COLOR_BGR2HSV);
+
+	//Scalar hsvColor;
+	//Vec4d colorF = this->color / 255, hsvColor;
+	//cvtColor(colorF, hsvColor, COLOR_BGR2HSV);
+	
+	//Mat4d colorMatF(this->color / 255), colorMatHSV; 
+	//vector<double> colorHSV = {0,0,0};
+	//cvtColor(colorF, colorHSV, COLOR_BGR2HSV, 3);
+	//Mat colorMatF(1, 1, CV_32FC3, this->color/255), colorMatHSV;
+
+	/*Vec4d color4d = this->color / 255;
+	Vec4f color4f = (Vec4f)color4d;
+	Mat4f colorMatF(color4f);
+	Mat3f colorMatHSV;
+	cvtColor(colorMatF, colorMatHSV, COLOR_BGR2HSV, 3);
+	Scalar colorHSV = colorMatHSV.at<Vec3f>();*/
+
+	// TODO: perhaps, perform this conversion once before keying out
+	Mat4f colorMatF((Vec4f)(this->color/255));
+	Mat3f colorMatHSV;
+	cvtColor(colorMatF, colorMatHSV, COLOR_BGR2HSV, 3);
+	Scalar colorHSV = colorMatHSV.at<Vec3f>();
+
+	//double tolUp = 1 + this->tolerance / 100.0, tolLo = 1 - this->tolerance / 100.0;
+	//assert(tolUp <= 2 && tolLo >= 0);
+	//Scalar lowerBound = colorHSV * tolUp;
+	Scalar lowerHSV, upperHSV;
+	assert(this->tolerance >= 0 && this->tolerance <= 100);
+	scaleAdd(colorHSV, -this->tolerance/100.0, colorHSV, lowerHSV);
+	scaleAdd(colorHSV, +this->tolerance/100.0, colorHSV, upperHSV);
+
+	Mat mask;
+	inRange(frameHSV, lowerHSV, upperHSV, mask);
+
+	imshow(this->windowName, mask);
+	waitKey();
+
+	return Mat();
+}	// keyOutFrame
 
 ChromaKeyer::~ChromaKeyer()
 {
