@@ -108,7 +108,7 @@ private:
 //VideoReader::VideoReader(string inputFile, bool looped)
 //	: MediaSource(MediaSource::Video, std::move(inputFile), looped)
 VideoFileReader::VideoFileReader(const string &videoFile, bool looped)
-	: MediaSource(MediaSource::VideoFile, videoFile, looped)
+	: MediaSource(MediaSource::VideoFile, filesystem::exists(videoFile) ? videoFile : throw runtime_error("Input video doesn't exist: "+videoFile), looped)
 	, cap(videoFile)
 {
 	CV_Assert(cap.isOpened());
@@ -279,7 +279,7 @@ unique_ptr<MediaSink> MediaFactory::createWriter(const string &outputFile, Size 
 		//char fcc[] = { 'x','v','i' };
 
 		// Help the compiler to deduce the argument types which are passed to the constructor
-		return make_unique<VideoFileWriter, const string &, Size, const char(&)[4], double>(outputFile, move(frameSize), { 'M','P','4','V' }, 30);
+		return make_unique<VideoFileWriter, const string &, Size, const char(&)[4], double>(outputFile, move(frameSize), { 'm','p','4','v' }, 30);
 		//return make_unique<VideoFileWriter>(outputFile, frameSize, "XVID", 30);
 	}
 	else
@@ -365,6 +365,8 @@ void ChromaKeyer::keyOut(const char* inputFile, const char* backgroundFile, cons
 
 	unique_ptr<MediaSink> sink = MediaFactory::createWriter(outputFile, this->curFrame.size());	// frame size obtained during the parameters setting phase
 
+	int delay = 10;	// TODO: add delay as a function parameter
+
 	if (srcIn->getMediaType() == MediaSource::VideoFile)
 	{
 		if (sink->getMediaType() != MediaSink::VideoFile && sink->getMediaType() != MediaSink::Dummy)
@@ -372,6 +374,8 @@ void ChromaKeyer::keyOut(const char* inputFile, const char* backgroundFile, cons
 	}
 	else if (srcIn->getMediaType() == MediaSource::ImageFile)
 	{
+		delay = 0;
+
 		if (srcBg->getMediaType() != MediaSource::ImageFile)
 			throw runtime_error("Background must be an image.");
 
@@ -401,7 +405,7 @@ void ChromaKeyer::keyOut(const char* inputFile, const char* backgroundFile, cons
 
 		imshow(this->windowName, resFrame);
 
-		key = waitKey(10);
+		key = waitKey(delay);
 	}	// for
 
 	destroyWindow(this->windowName);
@@ -412,28 +416,10 @@ Mat ChromaKeyer::keyOutFrame(const Mat& background)
 	Mat frameF, bgF;
 	this->curFrame.convertTo(frameF, CV_32F, 1.0/255);
 	background.convertTo(bgF, CV_32F, 1.0/255);
-	//frameF /= 255;
-	//bgF /= 255;
 
-	Mat frameHSV, bgHSV;	
-	cvtColor(frameF, frameHSV, COLOR_BGR2HSV);
-	cvtColor(bgF, bgHSV, COLOR_BGR2HSV);
-
-	//Scalar hsvColor;
-	//Vec4d colorF = this->color / 255, hsvColor;
-	//cvtColor(colorF, hsvColor, COLOR_BGR2HSV);
-	
-	//Mat4d colorMatF(this->color / 255), colorMatHSV; 
-	//vector<double> colorHSV = {0,0,0};
-	//cvtColor(colorF, colorHSV, COLOR_BGR2HSV, 3);
-	//Mat colorMatF(1, 1, CV_32FC3, this->color/255), colorMatHSV;
-
-	/*Vec4d color4d = this->color / 255;
-	Vec4f color4f = (Vec4f)color4d;
-	Mat4f colorMatF(color4f);
-	Mat3f colorMatHSV;
-	cvtColor(colorMatF, colorMatHSV, COLOR_BGR2HSV, 3);
-	Scalar colorHSV = colorMatHSV.at<Vec3f>();*/
+	Mat3f frameHSV, bgHSV;	
+	cvtColor(frameF, frameHSV, COLOR_BGR2HSV, 3);
+	cvtColor(bgF, bgHSV, COLOR_BGR2HSV, 3);
 
 	// TODO: perhaps, perform this conversion once before keying out
 	Mat4f colorMatF((Vec4f)(this->color/255));
@@ -449,13 +435,57 @@ Mat ChromaKeyer::keyOutFrame(const Mat& background)
 	scaleAdd(colorHSV, -this->tolerance/100.0, colorHSV, lowerHSV);
 	scaleAdd(colorHSV, +this->tolerance/100.0, colorHSV, upperHSV);
 
-	Mat mask;
-	inRange(frameHSV, lowerHSV, upperHSV, mask);
+	Mat1b maskB;
+	Mat1f maskF;
+	inRange(frameHSV, lowerHSV, upperHSV, maskB);
+	maskB.convertTo(maskF, CV_32F, 1.0 / 255);
 
-	imshow(this->windowName, mask);
-	waitKey();
+	//imshow(this->windowName, maskB);
+	//waitKey();
 
-	return Mat();
+	//dilate(maskF, maskF, getStructuringElement(MORPH_ELLIPSE, Size(11, 11)));
+	morphologyEx(maskF, maskF, MORPH_OPEN, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)), Point(-1,-1), 3);
+
+	//imshow(this->windowName, maskF);
+	//waitKey();
+
+	///GaussianBlur(mask, mask, Size(0, 0), this->softness / 100.0, this->softness / 100.0);
+	//GaussianBlur(maskF, maskF, Size(2*this->softness+1, 2*this->softness+1), 0, 0);
+	GaussianBlur(maskF, maskF, Size(5,5), 0, 0);
+
+	//imshow(this->windowName, maskF);
+	//waitKey();
+
+	//addWeighted(frameHSV, );
+	//Mat fgHSV;
+	//Mat3f invMask = Vec3f::all(1) - maskF;
+	Mat3f mask3f;
+	merge(vector<Mat1f>{maskF, maskF, maskF}, mask3f);
+	//multiply(frameHSV, (Scalar::all(1) - maskF), fgHSV);
+	Mat3f maskInv = Scalar::all(1.0) - mask3f;
+	//imshow(this->windowName, maskInv);
+	//waitKey();
+
+	//multiply(frameHSV, Scalar::all(1.0)-mask3f, fgHSV);
+	Mat3f fgBGRF, bgBGRF;
+	multiply(frameF, maskInv, fgBGRF);
+	multiply(bgF, mask3f, bgBGRF);
+	
+
+	//imshow(this->windowName, fgBGRF);
+	//waitKey();
+
+	Mat3f resBGRF;
+	add(fgBGRF, bgBGRF, resBGRF);
+
+	//Mat3f resBGRF;
+	//cvtColor(resHSV, resBGRF, COLOR_HSV2BGR);
+	resBGRF.convertTo(this->curFrame, CV_8U, 255);
+
+	//imshow(this->windowName, resBGRF);
+	//waitKey();
+
+	return this->curFrame;
 }	// keyOutFrame
 
 ChromaKeyer::~ChromaKeyer()
