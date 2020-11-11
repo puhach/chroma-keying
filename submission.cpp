@@ -5,6 +5,7 @@
 #include <iostream>
 #include <filesystem>
 #include <set>
+#include <chrono>
 
 using namespace std;
 using namespace cv;
@@ -30,6 +31,8 @@ public:
 
 	virtual bool readNext(Mat &frame) = 0;
 	
+	virtual void reset() = 0;
+
 	virtual ~MediaSource() = default;
 
 protected:
@@ -61,32 +64,54 @@ public:
 
 	bool readNext(Mat& frame) override;
 
+	void reset() override;
+
 private:
-	bool imageRead = false;
+	//bool imageRead = false;
+	Mat cache;
 };	// ImageFileReader
 
 
-//ImageReader::ImageReader(string imageFile, bool looped)
-//	: MediaSource(MediaSource::Image, cv::haveImageReader(imageFile) ? std::move(imageFile) : throw runtime_error("No decoder for this image: " + imageFile), looped)
 ImageFileReader::ImageFileReader(const string &imageFile, bool looped)
-	: MediaSource(MediaSource::ImageFile, cv::haveImageReader(imageFile) ? imageFile : throw runtime_error("No decoder for this image file: " + imageFile), looped)
+	//: MediaSource(MediaSource::ImageFile, cv::haveImageReader(imageFile) ? imageFile : throw runtime_error("No decoder for this image file: " + imageFile), looped)
+	: MediaSource(MediaSource::ImageFile, filesystem::exists(imageFile) ? imageFile : throw runtime_error("Input image doesn't exist: " + imageFile), looped)
 {
-	//if (!cv::haveImageReader(imageFile))
-	//	throw runtime_error("No decoder for this image: " + imageFile);
+	if (!cv::haveImageReader(imageFile))
+		throw runtime_error("No decoder for this image file: " + imageFile);
 }	// ctor
 
 bool ImageFileReader::readNext(Mat& frame)
 {
-	//if (this->imageRead && !this->loop)
-	if (this->imageRead && !isLooped())
-		return false;	// don't double read
+	//if (this->imageRead && !isLooped())
+	//	return false;	// don't double read
 
-	//frame = imread(this->imageFile, IMREAD_COLOR);
-	frame = imread(String{ getMediaPath() }, IMREAD_COLOR);
+	////frame = imread(String{ getMediaPath() }, IMREAD_COLOR);
 	//frame = imread(getMediaPath(), IMREAD_COLOR);
-	CV_Assert(!frame.empty());	
-	return (this->imageRead = true);
+	//CV_Assert(!frame.empty());	
+	//return (this->imageRead = true);
+	
+	if (this->cache.empty())
+	{
+		this->cache = imread(getMediaPath(), IMREAD_COLOR);
+		CV_Assert(!this->cache.empty());
+		this->cache.copyTo(frame);
+		return true;
+	}	// cache empty
+	else
+	{
+		if (isLooped())
+		{
+			this->cache.copyTo(frame);
+			return true;
+		}
+		else return false;
+	}	// image cached
 }	// readNext
+
+void ImageFileReader::reset()
+{
+	this->cache.release();	// this will force the image to be reread
+}	// reset
 
 
 class VideoFileReader : public MediaSource
@@ -98,7 +123,7 @@ public:
 
 	virtual bool readNext(Mat& frame) override;
 
-	// TODO
+	virtual void reset() override;
 
 private:
 	String inputFile;
@@ -130,6 +155,12 @@ bool VideoFileReader::readNext(Mat& frame)
 	}	// looped
 	else return false;	// probably, the end of the stream
 }	// readNext
+
+void VideoFileReader::reset()
+{
+	cap.release();
+	CV_Assert(cap.open(getMediaPath()));
+}	// reset
 
 
 class MediaSink
@@ -319,9 +350,9 @@ private:
 bool ChromaKeyer::setUp(const char* inputFile)
 {
 	this->paramsSet = false;
-	this->tolerance = 20;
+	this->tolerance = 10;
 	this->softness = 3;
-	this->defringe = 4;
+	this->defringe = 20;
 
 	unique_ptr<MediaSource> reader = MediaFactory::createReader(inputFile, true /*loop*/);
 
@@ -329,7 +360,7 @@ bool ChromaKeyer::setUp(const char* inputFile)
 	setMouseCallback(this->windowName, ChromaKeyer::onMouse, this);
 	createTrackbar("Tolerance", windowName, &this->tolerance, 100, nullptr /*ChromaKeyer::onToleranceChanged*/, this);
 	createTrackbar("Softness", windowName, &this->softness, 10, nullptr, this);
-	createTrackbar("Defringe", windowName, &this->defringe, 30, nullptr, this);
+	createTrackbar("Defringe", windowName, &this->defringe, 100, nullptr, this);
 
 	for (int key = 0; !this->paramsSet && (key & 0xFF) != 27; )
 	{
@@ -389,9 +420,13 @@ void ChromaKeyer::keyOut(const char* inputFile, const char* backgroundFile, cons
 
 	for (int key = 0; srcIn->readNext(this->curFrame) && (key & 0xFF) != 27; )
 	{
+		std::chrono::steady_clock::time_point t = std::chrono::steady_clock::now();
 		//imshow(this->windowName, this->curFrame);
 		Mat bgFrame;
 		srcBg->readNext(bgFrame);
+
+		cout << "bg read: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
+
 
 		// resize the background frame to match the input frame
 		cv::resize(bgFrame, bgFrame, this->curFrame.size(), 0, 0, 
@@ -400,8 +435,12 @@ void ChromaKeyer::keyOut(const char* inputFile, const char* backgroundFile, cons
 		// key out using the resized background frame
 		Mat resFrame = keyOutFrame(bgFrame);
 
+		t = std::chrono::steady_clock::now();
+
 		// write the resulting frame to the sink
 		sink->write(resFrame);
+
+		cout << "res.write: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 
 		imshow(this->windowName, resFrame);
 
@@ -413,13 +452,17 @@ void ChromaKeyer::keyOut(const char* inputFile, const char* backgroundFile, cons
 
 Mat ChromaKeyer::keyOutFrame(const Mat& background)
 {
+	auto t = std::chrono::steady_clock::now();
 	Mat frameF, bgF;
 	this->curFrame.convertTo(frameF, CV_32F, 1.0/255);
 	background.convertTo(bgF, CV_32F, 1.0/255);
+	cout << "conv. to float: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 
+	t = std::chrono::steady_clock::now();
 	Mat3f frameHSV, bgHSV;	
 	cvtColor(frameF, frameHSV, COLOR_BGR2HSV, 3);
 	cvtColor(bgF, bgHSV, COLOR_BGR2HSV, 3);
+	cout << "cvtcolor: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 
 	// TODO: perhaps, perform this conversion once before keying out
 	Mat4f colorMatF((Vec4f)(this->color/255));
@@ -427,16 +470,21 @@ Mat ChromaKeyer::keyOutFrame(const Mat& background)
 	cvtColor(colorMatF, colorMatHSV, COLOR_BGR2HSV, 3);
 	Scalar colorHSV = colorMatHSV.at<Vec3f>();
 
+
+	t = std::chrono::steady_clock::now();
 	Scalar hsvRange{ 360, 1, 1 };
 	//double tolUp = 1 + this->tolerance / 100.0, tolLo = 1 - this->tolerance / 100.0;
 	//assert(tolUp <= 2 && tolLo >= 0);
 	//Scalar lowerBound = colorHSV * tolUp;
-	Scalar lowerHSV, upperHSV;
 	assert(this->tolerance >= 0 && this->tolerance <= 100);
-	//scaleAdd(colorHSV, -this->tolerance/100.0, colorHSV, lowerHSV);
-	//scaleAdd(colorHSV, +this->tolerance/100.0, colorHSV, upperHSV);
-	scaleAdd(hsvRange, -this->tolerance/100.0, colorHSV, lowerHSV);
-	scaleAdd(hsvRange, +this->tolerance/100.0, colorHSV, upperHSV);
+	assert(this->defringe >= 0 && this->defringe <= 100);
+	Scalar lowerHSV = { colorHSV[0] - this->tolerance / 100.0 * hsvRange[0], this->defringe/100.0, this->defringe/100.0 }
+		, upperHSV = { colorHSV[0] + this->tolerance / 100.0 * hsvRange[0], hsvRange[1], hsvRange[2] };
+
+	///scaleAdd(colorHSV, -this->tolerance/100.0, colorHSV, lowerHSV);
+	///scaleAdd(colorHSV, +this->tolerance/100.0, colorHSV, upperHSV);
+	//scaleAdd(hsvRange, -this->tolerance/100.0, colorHSV, lowerHSV);
+	//scaleAdd(hsvRange, +this->tolerance/100.0, colorHSV, upperHSV);
 
 	Mat1b maskB, orMaskB;
 	inRange(frameHSV, lowerHSV, upperHSV, maskB);
@@ -474,14 +522,17 @@ Mat ChromaKeyer::keyOutFrame(const Mat& background)
 	Mat1f maskF;
 	maskB.convertTo(maskF, CV_32F, 1.0 / 255);
 
+	cout << "mask: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 
 	//imshow(this->windowName, maskB);
 	//waitKey();
 
+	//t = std::chrono::steady_clock::now();
 	//erode(maskF, maskF, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)), Point(-1, -1), 1);	// TEST!
-	dilate(maskF, maskF, getStructuringElement(MORPH_ELLIPSE, Size(3, 3)), Point(-1, -1), this->defringe);
+	//dilate(maskF, maskF, getStructuringElement(MORPH_ELLIPSE, Size(3, 3)), Point(-1, -1), this->defringe);
 	///dilate(maskF, maskF, getStructuringElement(MORPH_ELLIPSE, Size(11, 11)));
 	///morphologyEx(maskF, maskF, MORPH_OPEN, getStructuringElement(MORPH_ELLIPSE, Size(5, 5)), Point(-1,-1), 3);
+	//cout << "dilate: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 
 	//imshow(this->windowName, maskF);
 	//waitKey();
