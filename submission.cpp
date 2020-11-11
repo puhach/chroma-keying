@@ -329,9 +329,11 @@ public:
 	// TODO: define copy/move constructors and the assignment operators
 	~ChromaKeyer();
 
-	bool setUp(const char* inputFile);
+	//bool setUp(const char* inputFile);
+	bool setUp(const string &inputFile);
 
-	void keyOut(const char *inputFile, const char *backgroundFile, const char *outputFile);
+	//void keyOut(const char *inputFile, const char *backgroundFile, const char *outputFile);
+	void keyOut(const string &inputFile, const string &backgroundFile, const string &outputFile);
 
 private:
 
@@ -343,16 +345,17 @@ private:
 	bool paramsSet = false;
 	Mat curFrame;
 	Scalar color;
-	//int pixelX = -1, pixelY = -1;
-	int tolerance = 0, softness = 0, defringe = 0;
+	//int tolerance = 10, softness = 3, defringe = 40;
+	int tolerance = 12, softness = 2, defringe = 40;	// default parameters
 };	// ChromaKeyer
 
-bool ChromaKeyer::setUp(const char* inputFile)
+//bool ChromaKeyer::setUp(const char* inputFile)
+bool ChromaKeyer::setUp(const string &inputFile)
 {
 	this->paramsSet = false;
-	this->tolerance = 10;
-	this->softness = 3;
-	this->defringe = 20;
+	//this->tolerance = 10;
+	//this->softness = 3;
+	//this->defringe = 20;
 
 	unique_ptr<MediaSource> reader = MediaFactory::createReader(inputFile, true /*loop*/);
 
@@ -387,7 +390,8 @@ void ChromaKeyer::onMouse(int event, int x, int y, int flags, void* data)
 	}
 }	// onMouse
 
-void ChromaKeyer::keyOut(const char* inputFile, const char* backgroundFile, const char* outputFile)
+//void ChromaKeyer::keyOut(const char* inputFile, const char* backgroundFile, const char* outputFile)
+void ChromaKeyer::keyOut(const string &inputFile, const string &backgroundFile, const string &outputFile)
 {
 	assert(this->paramsSet);
 
@@ -543,6 +547,7 @@ Mat ChromaKeyer::keyOutFrame(const Mat& background)
 	if (this->softness > 0)
 	{
 		int ksize = 2*this->softness + 1;
+		dilate(maskF, maskF, getStructuringElement(MORPH_RECT, Size(ksize, ksize)));		
 		GaussianBlur(maskF, maskF, Size(ksize, ksize), 0, 0);
 	}
 
@@ -590,19 +595,20 @@ ChromaKeyer::~ChromaKeyer()
 
 int main(int argc, char* argv[])
 {
-	if (argc != 4)
+	if (argc != 3 && argc != 4)
 	{
-		cerr << "Usage: chromak <input video with green screen> <background file> <output file>" << endl;
+		cerr << "Usage: chromak <input video with green screen> <background file> [<output file>]" << endl;
 		return -1;
 	}
 
 	try
 	{
-		ChromaKeyer keyer("Chroma Keying");
+		string inputFile(argv[1]), backgroundFile(argv[2]), outputFile(argc > 3 ? argv[3] : "");
 
-		while (keyer.setUp(argv[1]))	// TODO
+		ChromaKeyer keyer("Chroma Keying");
+		while (keyer.setUp(inputFile))	// TODO
 		{
-			keyer.keyOut(argv[1], argv[2], argv[3]);
+			keyer.keyOut(inputFile, backgroundFile, outputFile);
 		}
 	}
 	catch (const std::exception& e)
