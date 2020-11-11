@@ -337,13 +337,19 @@ public:
 
 private:
 
-	Mat keyOutFrame(const Mat &background);
+	//Mat keyOutFrame(const Scalar &colorHSV, const Mat &background);
+	Mat keyOutFrame(const Scalar& colorHSV);
 
 	static void onMouse(int event, int x, int y, int flags, void* data);
 
 	String windowName;
 	bool paramsSet = false;
-	Mat curFrame;
+	Mat inputFrameBGR, backgroundBGR, outputFrameBGR;
+	Mat frameBGRF, backgroundBGRF;
+	Mat3f frameHSV;
+	Mat1b maskB;
+	Mat1f maskF;
+	Mat3f mask3F;
 	Scalar color;
 	//int tolerance = 10, softness = 3, defringe = 40;
 	int tolerance = 12, softness = 2, defringe = 40;	// default parameters
@@ -367,8 +373,8 @@ bool ChromaKeyer::setUp(const string &inputFile)
 
 	for (int key = 0; !this->paramsSet && (key & 0xFF) != 27; )
 	{
-		reader->readNext(this->curFrame);
-		imshow(this->windowName, this->curFrame);
+		reader->readNext(this->inputFrameBGR);
+		imshow(this->windowName, this->inputFrameBGR);
 		key = waitKey(10);
 	}
 
@@ -385,7 +391,7 @@ void ChromaKeyer::onMouse(int event, int x, int y, int flags, void* data)
 
 	if (event == EVENT_LBUTTONUP)
 	{
-		keyer->color = keyer->curFrame.at<Vec3b>(y, x);
+		keyer->color = keyer->inputFrameBGR.at<Vec3b>(y, x);
 		keyer->paramsSet = true;
 	}
 }	// onMouse
@@ -398,7 +404,7 @@ void ChromaKeyer::keyOut(const string &inputFile, const string &backgroundFile, 
 	unique_ptr<MediaSource> srcIn = MediaFactory::createReader(inputFile, false)
 		, srcBg = MediaFactory::createReader(backgroundFile, true);
 
-	unique_ptr<MediaSink> sink = MediaFactory::createWriter(outputFile, this->curFrame.size());	// frame size obtained during the parameters setting phase
+	unique_ptr<MediaSink> sink = MediaFactory::createWriter(outputFile, this->inputFrameBGR.size());	// frame size obtained during the parameters setting phase
 
 	int delay = 10;	// TODO: add delay as a function parameter
 
@@ -422,22 +428,35 @@ void ChromaKeyer::keyOut(const string &inputFile, const string &backgroundFile, 
 		// TODO: check other media types 
 	}
 
-	for (int key = 0; srcIn->readNext(this->curFrame) && (key & 0xFF) != 27; )
+
+
+	// TODO: perhaps, perform this conversion once before keying out
+	Mat4f colorMatF((Vec4f)(this->color / 255));
+	Mat3f colorMatHSV;
+	cvtColor(colorMatF, colorMatHSV, COLOR_BGR2HSV, 3);
+	Scalar colorHSV = colorMatHSV.at<Vec3f>();
+
+
+	for (int key = 0; srcIn->readNext(this->inputFrameBGR) && (key & 0xFF) != 27; )
 	{
 		std::chrono::steady_clock::time_point t = std::chrono::steady_clock::now();
 		//imshow(this->windowName, this->curFrame);
-		Mat bgFrame;
-		srcBg->readNext(bgFrame);
+		/*Mat bgFrame;
+		srcBg->readNext(bgFrame);*/
+		srcBg->readNext(this->backgroundBGR);
 
 		cout << "bg read: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 
 
 		// resize the background frame to match the input frame
-		cv::resize(bgFrame, bgFrame, this->curFrame.size(), 0, 0, 
-			bgFrame.rows*bgFrame.cols > this->curFrame.rows*this->curFrame.cols ? INTER_AREA : INTER_CUBIC);
+		/*cv::resize(bgFrame, bgFrame, this->curFrame.size(), 0, 0, 
+			bgFrame.rows*bgFrame.cols > this->curFrame.rows*this->curFrame.cols ? INTER_AREA : INTER_CUBIC);*/
+		cv::resize(this->backgroundBGR, this->backgroundBGR, this->inputFrameBGR.size(), 0, 0,
+			this->backgroundBGR.rows * this->backgroundBGR.cols > this->inputFrameBGR.rows * this->inputFrameBGR.cols ? INTER_AREA : INTER_CUBIC);
 
 		// key out using the resized background frame
-		Mat resFrame = keyOutFrame(bgFrame);
+		/*Mat resFrame = keyOutFrame(colorHSV, bgFrame);*/
+		Mat resFrame = keyOutFrame(colorHSV);
 
 		t = std::chrono::steady_clock::now();
 
@@ -454,25 +473,20 @@ void ChromaKeyer::keyOut(const string &inputFile, const string &backgroundFile, 
 	destroyWindow(this->windowName);
 }	// keyOut
 
-Mat ChromaKeyer::keyOutFrame(const Mat& background)
+//Mat ChromaKeyer::keyOutFrame(const Scalar &colorHSV, const Mat& background)
+Mat ChromaKeyer::keyOutFrame(const Scalar& colorHSV)
 {
 	auto t = std::chrono::steady_clock::now();
-	Mat frameF, bgF;
-	this->curFrame.convertTo(frameF, CV_32F, 1.0/255);
-	background.convertTo(bgF, CV_32F, 1.0/255);
-	cout << "conv. to float: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
+	//Mat frameF, bgF;
+	this->inputFrameBGR.convertTo(this->frameBGRF, CV_32F, 1.0/255);
+	this->backgroundBGR.convertTo(this->backgroundBGRF, CV_32F, 1.0/255);
+	//cout << "conv. to float: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 
-	t = std::chrono::steady_clock::now();
-	Mat3f frameHSV, bgHSV;	
-	cvtColor(frameF, frameHSV, COLOR_BGR2HSV, 3);
-	cvtColor(bgF, bgHSV, COLOR_BGR2HSV, 3);
+	//t = std::chrono::steady_clock::now();
+	//Mat3f frameHSV;// , bgHSV;
+	cvtColor(this->frameBGRF, this->frameHSV, COLOR_BGR2HSV, 3);
+	//cvtColor(bgF, bgHSV, COLOR_BGR2HSV, 3);
 	cout << "cvtcolor: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
-
-	// TODO: perhaps, perform this conversion once before keying out
-	Mat4f colorMatF((Vec4f)(this->color/255));
-	Mat3f colorMatHSV;
-	cvtColor(colorMatF, colorMatHSV, COLOR_BGR2HSV, 3);
-	Scalar colorHSV = colorMatHSV.at<Vec3f>();
 
 
 	t = std::chrono::steady_clock::now();
@@ -490,23 +504,25 @@ Mat ChromaKeyer::keyOutFrame(const Mat& background)
 	//scaleAdd(hsvRange, -this->tolerance/100.0, colorHSV, lowerHSV);
 	//scaleAdd(hsvRange, +this->tolerance/100.0, colorHSV, upperHSV);
 
-	Mat1b maskB, orMaskB;
-	inRange(frameHSV, lowerHSV, upperHSV, maskB);
+	//Mat1b maskB, orMaskB;	
+	inRange(this->frameHSV, lowerHSV, upperHSV, this->maskB);
 
 	//imshow(this->windowName, maskB);
 	//waitKey();
 
 	// Hue values wrap around the 360-degree cycle
+	
+	Mat1b orMaskB;
 	if (lowerHSV[0] < 0 && upperHSV[0] < hsvRange[0])
 	{
 		lowerHSV[0] = lowerHSV[0] + hsvRange[0];
 		upperHSV[0] = hsvRange[0];
-		inRange(frameHSV, lowerHSV, upperHSV, orMaskB);
+		inRange(this->frameHSV, lowerHSV, upperHSV, orMaskB);
 
 		//imshow(this->windowName, orMaskB);
 		//waitKey();
 
-		bitwise_or(maskB, orMaskB, maskB);
+		bitwise_or(this->maskB, orMaskB, this->maskB);
 
 		//imshow(this->windowName, maskB);
 		//waitKey();
@@ -519,12 +535,12 @@ Mat ChromaKeyer::keyOutFrame(const Mat& background)
 	{
 		lowerHSV[0] = 0;
 		upperHSV[0] = upperHSV[0] - hsvRange[0];
-		inRange(frameHSV, lowerHSV, upperHSV, orMaskB);
-		bitwise_or(maskB, orMaskB, maskB);
+		inRange(this->frameHSV, lowerHSV, upperHSV, orMaskB);
+		bitwise_or(this->maskB, orMaskB, this->maskB);
 	}
 
-	Mat1f maskF;
-	maskB.convertTo(maskF, CV_32F, 1.0 / 255);
+	//Mat1f maskF;
+	this->maskB.convertTo(this->maskF, CV_32F, 1.0 / 255);
 
 	cout << "mask: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 
@@ -541,49 +557,59 @@ Mat ChromaKeyer::keyOutFrame(const Mat& background)
 	//imshow(this->windowName, maskF);
 	//waitKey();
 
+	t = std::chrono::steady_clock::now();
 	///GaussianBlur(mask, mask, Size(0, 0), this->softness / 100.0, this->softness / 100.0);
 	//GaussianBlur(maskF, maskF, Size(2*this->softness+1, 2*this->softness+1), 0, 0);
 	//GaussianBlur(maskF, maskF, Size(2*this->softness+1,2*this->softness+1), 0, 0);
 	if (this->softness > 0)
 	{
 		int ksize = 2*this->softness + 1;
-		dilate(maskF, maskF, getStructuringElement(MORPH_RECT, Size(ksize, ksize)));		
-		GaussianBlur(maskF, maskF, Size(ksize, ksize), 0, 0);
+		dilate(this->maskF, this->maskF, getStructuringElement(MORPH_RECT, Size(ksize, ksize)));		
+		GaussianBlur(this->maskF, this->maskF, Size(ksize, ksize), 0, 0);
 	}
 
+	cout << "blur: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 	//imshow(this->windowName, maskF);
 	//waitKey();
 
-	//addWeighted(frameHSV, );
-	//Mat fgHSV;
-	//Mat3f invMask = Vec3f::all(1) - maskF;
-	Mat3f mask3f;
-	merge(vector<Mat1f>{maskF, maskF, maskF}, mask3f);
-	//multiply(frameHSV, (Scalar::all(1) - maskF), fgHSV);
-	Mat3f maskInv = Scalar::all(1.0) - mask3f;
+	
+	//Mat3f mask3F;
+	merge(vector<Mat1f>{maskF, maskF, maskF}, this->mask3F);
+	//Mat3f maskInv = Scalar::all(1.0) - mask3F;
+	
 	//imshow(this->windowName, maskInv);
 	//waitKey();
 
-	//multiply(frameHSV, Scalar::all(1.0)-mask3f, fgHSV);
-	Mat3f fgBGRF, bgBGRF;
+	t = std::chrono::steady_clock::now();
+	/*Mat3f fgBGRF, bgBGRF;
 	multiply(frameF, maskInv, fgBGRF);
-	multiply(bgF, mask3f, bgBGRF);
+	multiply(bgF, mask3f, bgBGRF);*/
+	//this->backgroundBGRF = this->backgroundBGRF.mul(this->mask3F);
+	multiply(this->backgroundBGRF, this->mask3F, this->backgroundBGRF);
 	
-
+	//mask3F *= -1;
+	//mask3F += Scalar::all(1.0);
+	this->mask3F.convertTo(this->mask3F, -1, -1, 1.0);	// invert the mask: Scalar::all(1.0) - mask3F
+	//this->frameBGRF = this->frameBGRF.mul(this->mask3F);
+	multiply(this->frameBGRF, this->mask3F, this->frameBGRF);
+	
+	cout << "mat. mul: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 	//imshow(this->windowName, fgBGRF);
 	//waitKey();
 
-	Mat3f resBGRF;
-	add(fgBGRF, bgBGRF, resBGRF);
+	t = std::chrono::steady_clock::now();
+	//Mat3f resBGRF = bgF + frameF;
+	this->frameBGRF += this->backgroundBGRF;
+	//add(fgBGRF, bgBGRF, resBGRF);
+	cout << "mat. add: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 
-	//Mat3f resBGRF;
-	//cvtColor(resHSV, resBGRF, COLOR_HSV2BGR);
-	resBGRF.convertTo(this->curFrame, CV_8U, 255);
+	//resBGRF.convertTo(this->curFrame, CV_8U, 255);
+	this->frameBGRF.convertTo(this->outputFrameBGR, CV_8U, 255);
 
 	//imshow(this->windowName, resBGRF);
 	//waitKey();
 
-	return this->curFrame;
+	return this->outputFrameBGR;
 }	// keyOutFrame
 
 ChromaKeyer::~ChromaKeyer()
