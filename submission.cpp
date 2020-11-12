@@ -35,6 +35,8 @@ public:
 
 	virtual ~MediaSource() = default;
 
+
+
 protected:
 	
 	//MediaSource(MediaType inputType, const char *mediaPath, bool looped) //noexcept 
@@ -43,7 +45,11 @@ protected:
 		, mediaPath(mediaPath)
 		, looped(looped) {}
 
-	// TODO: define copy/move ctors and assignment operators
+	MediaSource(const MediaSource&) = default;
+	MediaSource(MediaSource&&) = default;
+
+	MediaSource& operator = (const MediaSource&) = default;
+	MediaSource& operator = (MediaSource&&) = default;
 
 private:
 	MediaType mediaType;
@@ -58,12 +64,14 @@ public:
 	//ImageReader(const char* imageFile, bool looped = false);
 	//ImageReader(string imageFile, bool looped = false);
 	ImageFileReader(const string& imageFile, bool looped = false);
-		
-	// TODO: implement copy/move constructors and assignment operators
-	~ImageFileReader() = default;
+	ImageFileReader(const ImageFileReader&) = delete;
+	ImageFileReader(ImageFileReader&& other) = default;
+	//~ImageFileReader() = default;
+
+	ImageFileReader& operator = (const ImageFileReader&) = delete;
+	ImageFileReader& operator = (ImageFileReader&& other) = default;
 
 	bool readNext(Mat& frame) override;
-
 	void reset() override;
 
 private:
@@ -92,9 +100,9 @@ bool ImageFileReader::readNext(Mat& frame)
 	
 	if (this->cache.empty())
 	{
-		this->cache = imread(getMediaPath(), IMREAD_COLOR);
-		CV_Assert(!this->cache.empty());
-		this->cache.copyTo(frame);
+		frame = imread(getMediaPath(), IMREAD_COLOR);
+		CV_Assert(!frame.empty());
+		frame.copyTo(this->cache);
 		return true;
 	}	// cache empty
 	else
@@ -120,6 +128,11 @@ public:
 	//VideoFileReader(const char* inputFile, bool loop = false);
 	//VideoFileReader(string inputFile, bool looped = false);
 	VideoFileReader(const string &videoFile, bool looped = false);
+	VideoFileReader(const VideoFileReader&) = delete;
+	VideoFileReader(VideoFileReader&& other) = default;
+
+	VideoFileReader& operator = (const VideoFileReader&) = delete;
+	VideoFileReader& operator = (VideoFileReader&& other) = default;
 
 	virtual bool readNext(Mat& frame) override;
 
@@ -187,6 +200,12 @@ protected:
 		: mediaType(mediaType)
 		, mediaPath(mediaPath) {}	// std::string's copy constructor is not noexcept 
 
+	MediaSink(const MediaSink&) = default;
+	MediaSink(MediaSink&&) = default;
+
+	MediaSink& operator = (const MediaSink&) = default;
+	MediaSink& operator = (MediaSink&&) = default;
+
 private:
 	MediaType mediaType;
 	string mediaPath;
@@ -197,8 +216,9 @@ class DummyWriter: public MediaSink
 {
 public:
 	DummyWriter() : MediaSink(MediaSink::Dummy, "") {}
-	// TODO: define copy/move constructors and assignment operators
-	~DummyWriter() = default;
+	DummyWriter(const DummyWriter&) = default;
+	DummyWriter(DummyWriter&&) = default;
+	//~DummyWriter() = default;
 
 	virtual void write(const Mat &frame) override { }
 };	// DummyWriter
@@ -210,7 +230,12 @@ public:
 	ImageFileWriter(const string& imageFile, Size frameSize)
 		: MediaSink(MediaSink::ImageFile, cv::haveImageWriter(imageFile) ? imageFile : throw runtime_error("No encoder for this image file: " + imageFile))
 		, frameSize(move(frameSize)) { }
-	// TODO: implement copy/move ctors and assignment operators
+	
+	ImageFileWriter(const ImageFileWriter&) = delete;
+	ImageFileWriter(ImageFileWriter&&) = default;
+
+	ImageFileWriter& operator = (const ImageFileWriter&) = delete;
+	ImageFileWriter& operator = (ImageFileWriter&&) = default;
 
 	virtual void write(const Mat& frame) override;
 
@@ -230,7 +255,11 @@ class VideoFileWriter : public MediaSink
 {
 public:
 	VideoFileWriter(const string& videoFile, Size frameSize, const char (&fourcc)[4], double fps);
-	// TODO: implement copy/move ctors and assignment operators
+	VideoFileWriter(const VideoFileWriter&) = delete;
+	VideoFileWriter(VideoFileWriter&&) = default;
+
+	VideoFileWriter& operator = (const VideoFileWriter&) = delete;
+	VideoFileWriter& operator = (VideoFileWriter&&) = default;
 
 	virtual void write(const Mat& frame) override;
 
@@ -429,6 +458,13 @@ void ChromaKeyer::keyOut(const string &inputFile, const string &backgroundFile, 
 	}
 
 
+	//ImageFileReader r1(inputFile);
+	//ImageFileReader r2 = move(r1);
+	//VideoFileReader r1(inputFile);
+	//VideoFileReader r2(move(r1));
+	//VideoCapture cap1(inputFile);
+	//VideoCapture cap2(inputFile); 
+	//cap2 = cap1;
 
 	// TODO: perhaps, perform this conversion once before keying out
 	Mat4f colorMatF((Vec4f)(this->color / 255));
@@ -439,13 +475,13 @@ void ChromaKeyer::keyOut(const string &inputFile, const string &backgroundFile, 
 
 	for (int key = 0; srcIn->readNext(this->inputFrameBGR) && (key & 0xFF) != 27; )
 	{
-		std::chrono::steady_clock::time_point t = std::chrono::steady_clock::now();
+		//std::chrono::steady_clock::time_point t = std::chrono::steady_clock::now();
 		//imshow(this->windowName, this->curFrame);
 		/*Mat bgFrame;
 		srcBg->readNext(bgFrame);*/
 		srcBg->readNext(this->backgroundBGR);
 
-		cout << "bg read: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
+		//cout << "bg read: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 
 
 		// resize the background frame to match the input frame
@@ -458,12 +494,12 @@ void ChromaKeyer::keyOut(const string &inputFile, const string &backgroundFile, 
 		/*Mat resFrame = keyOutFrame(colorHSV, bgFrame);*/
 		Mat resFrame = keyOutFrame(colorHSV);
 
-		t = std::chrono::steady_clock::now();
+		//t = std::chrono::steady_clock::now();
 
 		// write the resulting frame to the sink
 		sink->write(resFrame);
 
-		cout << "res.write: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
+		//cout << "res.write: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 
 		imshow(this->windowName, resFrame);
 
@@ -476,7 +512,7 @@ void ChromaKeyer::keyOut(const string &inputFile, const string &backgroundFile, 
 //Mat ChromaKeyer::keyOutFrame(const Scalar &colorHSV, const Mat& background)
 Mat ChromaKeyer::keyOutFrame(const Scalar& colorHSV)
 {
-	auto t = std::chrono::steady_clock::now();
+	//auto t = std::chrono::steady_clock::now();
 	//Mat frameF, bgF;
 	this->inputFrameBGR.convertTo(this->frameBGRF, CV_32F, 1.0/255);
 	this->backgroundBGR.convertTo(this->backgroundBGRF, CV_32F, 1.0/255);
@@ -486,10 +522,10 @@ Mat ChromaKeyer::keyOutFrame(const Scalar& colorHSV)
 	//Mat3f frameHSV;// , bgHSV;
 	cvtColor(this->frameBGRF, this->frameHSV, COLOR_BGR2HSV, 3);
 	//cvtColor(bgF, bgHSV, COLOR_BGR2HSV, 3);
-	cout << "cvtcolor: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
+	//cout << "cvtcolor: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 
 
-	t = std::chrono::steady_clock::now();
+	//t = std::chrono::steady_clock::now();
 	Scalar hsvRange{ 360, 1, 1 };
 	//double tolUp = 1 + this->tolerance / 100.0, tolLo = 1 - this->tolerance / 100.0;
 	//assert(tolUp <= 2 && tolLo >= 0);
@@ -542,7 +578,7 @@ Mat ChromaKeyer::keyOutFrame(const Scalar& colorHSV)
 	//Mat1f maskF;
 	this->maskB.convertTo(this->maskF, CV_32F, 1.0 / 255);
 
-	cout << "mask: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
+	//cout << "mask: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 
 	//imshow(this->windowName, maskB);
 	//waitKey();
@@ -557,7 +593,7 @@ Mat ChromaKeyer::keyOutFrame(const Scalar& colorHSV)
 	//imshow(this->windowName, maskF);
 	//waitKey();
 
-	t = std::chrono::steady_clock::now();
+	//t = std::chrono::steady_clock::now();
 	///GaussianBlur(mask, mask, Size(0, 0), this->softness / 100.0, this->softness / 100.0);
 	//GaussianBlur(maskF, maskF, Size(2*this->softness+1, 2*this->softness+1), 0, 0);
 	//GaussianBlur(maskF, maskF, Size(2*this->softness+1,2*this->softness+1), 0, 0);
@@ -568,7 +604,7 @@ Mat ChromaKeyer::keyOutFrame(const Scalar& colorHSV)
 		GaussianBlur(this->maskF, this->maskF, Size(ksize, ksize), 0, 0);
 	}
 
-	cout << "blur: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
+	//cout << "blur: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 	//imshow(this->windowName, maskF);
 	//waitKey();
 
@@ -580,7 +616,7 @@ Mat ChromaKeyer::keyOutFrame(const Scalar& colorHSV)
 	//imshow(this->windowName, maskInv);
 	//waitKey();
 
-	t = std::chrono::steady_clock::now();
+	//t = std::chrono::steady_clock::now();
 	/*Mat3f fgBGRF, bgBGRF;
 	multiply(frameF, maskInv, fgBGRF);
 	multiply(bgF, mask3f, bgBGRF);*/
@@ -593,15 +629,15 @@ Mat ChromaKeyer::keyOutFrame(const Scalar& colorHSV)
 	//this->frameBGRF = this->frameBGRF.mul(this->mask3F);
 	multiply(this->frameBGRF, this->mask3F, this->frameBGRF);
 	
-	cout << "mat. mul: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
+	//cout << "mat. mul: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 	//imshow(this->windowName, fgBGRF);
 	//waitKey();
 
-	t = std::chrono::steady_clock::now();
+	//t = std::chrono::steady_clock::now();
 	//Mat3f resBGRF = bgF + frameF;
 	this->frameBGRF += this->backgroundBGRF;
 	//add(fgBGRF, bgBGRF, resBGRF);
-	cout << "mat. add: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
+	//cout << "mat. add: " << std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t).count() << endl;
 
 	//resBGRF.convertTo(this->curFrame, CV_8U, 255);
 	this->frameBGRF.convertTo(this->outputFrameBGR, CV_8U, 255);
