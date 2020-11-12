@@ -373,8 +373,9 @@ bool ChromaKeyer::setUp(const string &inputFile)
 		key = waitKey(10);
 	}
 
-	destroyWindow(this->windowName);
-
+	
+    destroyWindow(this->windowName);
+    
 	return this->paramsSet;
 }	// setUp
 
@@ -533,7 +534,16 @@ Mat & ChromaKeyer::keyOutFrame(const Scalar& colorHSV)
 
 ChromaKeyer::~ChromaKeyer()
 {
-	destroyWindow(this->windowName);
+    try
+    {        
+        destroyWindow(this->windowName);    // may throw a cv::Exception about non-registered windows
+    }
+    catch (const cv::Exception &e)  // don't let the exception be thrown from the destructor
+    {
+#ifdef DEBUG_MODE        
+        cerr << "Warning! Failed to destroy the window: " << e.what() << endl;        
+#endif
+    }
 }
 
 
