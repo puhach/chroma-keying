@@ -9,7 +9,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DDEBUG_MODE")
 ######################## EDIT IF REQUIRED ####################
 # ###Uncomment the line below and specify the path to OpenCV directory i.e. the path to the OpenCVConfig.cmake file. Check the examples given below.
 #SET(OpenCV_DIR Enter-the-path-of-OpenCV-installation-on-your-system)
-set(OpenCV_DIR /opt/opencv/4.4.0/installation/lib/cmake/opencv4)
+#set(OpenCV_DIR /opt/opencv/4.4.0/installation/lib/cmake/opencv4)
 
 ################### OpenCV_DIR Examples  #####################
 
@@ -33,7 +33,7 @@ find_package( OpenCV REQUIRED )
 include_directories( ${OpenCV_INCLUDE_DIRS})
 
 
-ADD_EXECUTABLE(chromak submission.cpp)
+ADD_EXECUTABLE(chromak main.cpp mediasource.h imagefilereader.h imagefilereader.cpp videofilereader.h videofilereader.cpp mediasink.h imagefilewriter.h imagefilewriter.cpp videofilewriter.h videofilewriter.cpp mediafactory.h mediafactory.cpp chromakeyer.h chromakeyer.cpp)
 TARGET_LINK_LIBRARIES(chromak ${OpenCV_LIBS} )
 
 if(MSVC)
